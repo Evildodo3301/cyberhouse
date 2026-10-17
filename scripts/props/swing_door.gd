@@ -8,6 +8,9 @@ extends Node2D
 ## the node to aim the door across the doorway. Enemies (M2) open doors the
 ## same way the player does, by walking into them.
 
+## Stable ID so the learning system can remember "the door you died in".
+## Leave empty to use the node's name.
+@export var door_id: String = ""
 ## Door length in pixels (a doorway is 2.5 character widths).
 @export var length: float = 40.0
 ## How far it swings open, in degrees.
@@ -36,6 +39,8 @@ var _already_hit: Array[Node] = []
 
 func _ready() -> void:
 	add_to_group("doors")
+	if door_id == "":
+		door_id = name
 	# The solid part: blocks bodies and bullets, layer 5 = "doors".
 	_panel = AnimatableBody2D.new()
 	_panel.sync_to_physics = false

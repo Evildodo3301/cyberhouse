@@ -31,6 +31,10 @@ var facing: Vector2 = Vector2.RIGHT
 ## Bombs left in this room.
 var bombs_left: int = 0
 var _alive: bool = true
+# Remembered for the death report.
+var _last_attack: String = ""
+var _last_attack_ms: int = -1
+var _speed_before_death: float = 0.0
 
 # The attack goes through three steps: READY -> WINDUP -> RECOVERY -> READY.
 enum AttackState { READY, WINDUP, RECOVERY }
@@ -150,6 +154,8 @@ func request_attack(direction: Vector2) -> void:
 	facing = direction
 	_attack_state = AttackState.WINDUP
 	_attack_timer = settings.windup_time
+	_last_attack = "melee"
+	_last_attack_ms = Time.get_ticks_msec()
 
 
 func _update_attack(delta: float) -> void:
@@ -206,6 +212,8 @@ func request_bomb(direction: Vector2) -> void:
 		direction = aim if aim != Vector2.ZERO else facing
 	facing = direction.normalized()
 	bombs_left -= 1
+	_last_attack = "bomb"
+	_last_attack_ms = Time.get_ticks_msec()
 	bombs_changed.emit(bombs_left)
 	var bomb: Bomb = BOMB_SCENE.instantiate()
 	get_parent().add_child(bomb)   # into the room, so it doesn't move with us
@@ -223,12 +231,9 @@ func take_hit(attacker: Node2D, direction: Vector2, weapon: String) -> void:
 	if not _alive:
 		return
 	_alive = false
+	_speed_before_death = velocity.length()
 	velocity = Vector2.ZERO
-	TacticTracker.report_player_death({
-		"weapon": weapon,
-		"killer": attacker.name if attacker else "",
-		"player_position": global_position,
-	})
+	_report_death(attacker, weapon)
 	var gore := get_tree().get_first_node_in_group("gore")
 	if gore:
 		gore.add_kill(global_position, direction, body_color, weapon)
@@ -238,6 +243,37 @@ func take_hit(attacker: Node2D, direction: Vector2, weapon: String) -> void:
 		Input.vibrate_handheld(settings.big_vibration_ms)
 	Game.hit_stop(settings.death_freeze_time)
 	queue_redraw()
+
+
+## The "death move" data the learning system (M3) tags deaths with.
+func _report_death(attacker: Node2D, weapon: String) -> void:
+	var killer_type := "enemy_melee"
+	if weapon == "bomb":
+		killer_type = "own_bomb"
+	elif weapon.ends_with("gun"):
+		killer_type = "enemy_gun"
+	var door_id := ""
+	for door in get_tree().get_nodes_in_group("doors"):
+		if global_position.distance_to(door.global_position) <= door.length:
+			door_id = door.door_id
+	var noise_pulling := get_tree().get_nodes_in_group("enemies").any(
+		func(e): return e.is_alive() and e.chasing_noise)
+	var since_attack := -1.0
+	if _last_attack_ms >= 0:
+		since_attack = (Time.get_ticks_msec() - _last_attack_ms) / 1000.0
+	TacticTracker.report_player_death({
+		"killer_type": killer_type,
+		"weapon": weapon,
+		"killer": attacker.name if attacker else "",
+		"player_position": global_position,
+		"in_doorway": door_id != "",
+		"door_id": door_id,
+		"behind_corner": false,   # TODO M3: needs a corner check against the walls
+		"player_speed": _speed_before_death,
+		"last_attack": _last_attack,
+		"last_attack_seconds_ago": since_attack,
+		"noise_pulling_enemies": noise_pulling,
+	})
 
 
 # ---------------------------------------------------------------- drawing

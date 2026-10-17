@@ -30,6 +30,8 @@ var facing: Vector2 = Vector2.RIGHT
 ## Where it last saw (or heard) the player. M3 counters read this.
 var last_known_position: Vector2
 var chasing_noise: bool = false
+## Tactics this enemy should counter (read from TacticTracker; empty in M2).
+var active_counters: Array = []
 
 var _state_time: float = 0.0
 var _unseen_time: float = 0.0
@@ -54,6 +56,7 @@ func _ready() -> void:
 	_home_facing = facing
 	last_known_position = global_position
 	Game.noise_made.connect(_on_noise_made)
+	active_counters = TacticTracker.get_active_counters()
 
 
 func is_alive() -> bool:

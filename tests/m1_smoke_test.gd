@@ -212,7 +212,12 @@ func _initialize() -> void:
 	await wait_frames(60)
 	check(not player.is_alive(), "its swing kills the player")
 	var events: Array = root.get_node("TacticTracker").events_by_room.get(&"m1_test_arena", [])
-	check(events.any(func(e): return e.get("type") == "player_death"), "player death is logged for M3")
+	var tracker = root.get_node("TacticTracker")
+	var deaths: Array = tracker.get_attempt_reports(tracker.current_attempt()).filter(
+		func(e): return e.get("type") == "player_death")
+	check(deaths.size() == 1 and deaths[0].killer_type == "enemy_melee", "player death is logged for M3, per attempt")
+	var bomb_deaths: Array = events.filter(func(e): return e.get("killer_type") == "own_bomb")
+	check(bomb_deaths.size() == 1 and bomb_deaths[0].attempt < tracker.current_attempt(), "earlier own-bomb death sits in an earlier attempt")
 
 	# 12. Strike first from behind: one hit kills the grunt.
 	await reload_room(true)
