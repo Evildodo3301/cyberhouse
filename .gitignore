@@ -1,0 +1,6 @@
+# Godot's local cache. It is rebuilt automatically, never commit it.
+.godot/
+# Exported game builds
+/build/
+*.apk
+*.aab

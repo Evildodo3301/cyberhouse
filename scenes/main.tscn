@@ -1,0 +1,41 @@
+[gd_scene load_steps=9 format=3]
+
+[ext_resource type="Script" path="res://scripts/levels/main.gd" id="1_main"]
+[ext_resource type="Script" path="res://scripts/levels/test_arena.gd" id="2_arena"]
+[ext_resource type="PackedScene" path="res://scenes/player/player.tscn" id="3_player"]
+[ext_resource type="PackedScene" path="res://scenes/props/training_dummy.tscn" id="4_dummy"]
+[ext_resource type="PackedScene" path="res://scenes/ui/touch_controls.tscn" id="5_touch"]
+[ext_resource type="Script" path="res://scripts/core/game_camera.gd" id="6_camera"]
+[ext_resource type="Script" path="res://scripts/ui/death_screen.gd" id="7_death"]
+[ext_resource type="Script" path="res://scripts/fx/gore_layer.gd" id="8_gore"]
+
+[node name="Main" type="Node2D"]
+script = ExtResource("1_main")
+
+[node name="TestArena" type="Node2D" parent="."]
+script = ExtResource("2_arena")
+
+[node name="Gore" type="Node2D" parent="."]
+script = ExtResource("8_gore")
+
+[node name="Dummy1" parent="." instance=ExtResource("4_dummy")]
+position = Vector2(200, 60)
+
+[node name="Dummy2" parent="." instance=ExtResource("4_dummy")]
+position = Vector2(360, 120)
+
+[node name="Dummy3" parent="." instance=ExtResource("4_dummy")]
+position = Vector2(100, 250)
+
+[node name="Player" parent="." instance=ExtResource("3_player")]
+position = Vector2(240, 260)
+
+[node name="GameCamera" type="Camera2D" parent="." node_paths=PackedStringArray("target")]
+zoom = Vector2(3, 3)
+script = ExtResource("6_camera")
+target = NodePath("../Player")
+
+[node name="TouchControls" parent="." instance=ExtResource("5_touch")]
+
+[node name="DeathScreen" type="CanvasLayer" parent="."]
+script = ExtResource("7_death")

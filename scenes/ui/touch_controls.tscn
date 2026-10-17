@@ -1,0 +1,30 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/touch_controls.gd" id="1_touch"]
+[ext_resource type="Script" path="res://scripts/ui/virtual_joystick.gd" id="2_stick"]
+[ext_resource type="Script" path="res://scripts/ui/bomb_button.gd" id="3_bomb"]
+
+[node name="TouchControls" type="CanvasLayer"]
+script = ExtResource("1_touch")
+
+[node name="MoveStick" type="Node2D" parent="."]
+script = ExtResource("2_stick")
+color = Color(1, 0.16, 0.54, 1)
+
+[node name="AimStick" type="Node2D" parent="."]
+script = ExtResource("2_stick")
+side = 1
+
+[node name="BombButton" type="Node2D" parent="."]
+script = ExtResource("3_bomb")
+radius = 26.0
+color = Color(1, 0.3, 0.2, 1)
+
+[node name="PauseButton" type="Button" parent="."]
+process_mode = 3
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 44.0
+offset_bottom = 40.0
+focus_mode = 0
+text = "II"
