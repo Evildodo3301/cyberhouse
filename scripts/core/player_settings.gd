@@ -28,6 +28,9 @@ extends Resource
 @export var recovery_time: float = 0.25
 
 @export_group("Aim assist")
+## How visible the aim line is when it just follows your movement
+## (0 = hidden, 1 = as bright as a locked-on aim).
+@export var move_aim_line_alpha: float = 0.3
 ## If a target is within this many degrees of your aim, the swing snaps to it.
 @export var aim_assist_degrees: float = 15.0
 ## Aim assist only looks this far away.

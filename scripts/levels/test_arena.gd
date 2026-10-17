@@ -8,8 +8,11 @@ extends Node2D
 ## Extra walls inside the room, as Rect2(x, y, width, height).
 @export var pillars: Array[Rect2] = [
 	Rect2(120, 80, 32, 32),
-	Rect2(320, 200, 48, 24),
+	Rect2(340, 200, 48, 24),
 	Rect2(220, 140, 16, 64),
+	# Dividing wall with a 40 px doorway (y 120 to 160) for the swing door.
+	Rect2(296, 0, 16, 120),
+	Rect2(296, 160, 16, 160),
 ]
 @export var wall_thickness: float = 16.0
 @export var wall_color: Color = Color(0.55, 0.2, 1.0)    # neon purple
@@ -31,6 +34,7 @@ func _ready() -> void:
 		_add_wall(rect)
 	# Walls are drawn by a separate child that sits above the blood layer,
 	# so gore lands on the floor but never on top of a wall.
+	_build_navigation()
 	var wall_drawer := Node2D.new()
 	wall_drawer.z_index = 1
 	wall_drawer.draw.connect(_draw_walls.bind(wall_drawer))
@@ -42,6 +46,7 @@ func _add_wall(rect: Rect2) -> void:
 	var body := StaticBody2D.new()
 	body.collision_layer = 1   # layer 1 = "world"
 	body.collision_mask = 0
+	body.add_to_group("nav_walls")   # enemies' pathfinding avoids these
 	body.position = rect.get_center()
 	var shape := CollisionShape2D.new()
 	var rectangle := RectangleShape2D.new()
@@ -49,6 +54,25 @@ func _add_wall(rect: Rect2) -> void:
 	shape.shape = rectangle
 	body.add_child(shape)
 	add_child(body)
+
+
+## Builds the walkable map enemies use to find paths around walls.
+## Doors are left out on purpose: enemies path through doorways and push
+## the doors open like the player does.
+func _build_navigation() -> void:
+	var nav_polygon := NavigationPolygon.new()
+	nav_polygon.add_outline(PackedVector2Array([
+		Vector2.ZERO, Vector2(room_size.x, 0), room_size, Vector2(0, room_size.y),
+	]))
+	nav_polygon.agent_radius = 8.0
+	nav_polygon.parsed_geometry_type = NavigationPolygon.PARSED_GEOMETRY_STATIC_COLLIDERS
+	nav_polygon.parsed_collision_mask = 1
+	nav_polygon.source_geometry_mode = NavigationPolygon.SOURCE_GEOMETRY_GROUPS_WITH_CHILDREN
+	nav_polygon.source_geometry_group_name = &"nav_walls"
+	var region := NavigationRegion2D.new()
+	region.navigation_polygon = nav_polygon
+	add_child(region)
+	region.bake_navigation_polygon(false)   # false = right now, not in the background
 
 
 func _draw() -> void:

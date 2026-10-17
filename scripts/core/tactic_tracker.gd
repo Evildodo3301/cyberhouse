@@ -12,6 +12,8 @@ var current_room_id: StringName = &""
 
 ## Reports per room: { room_id: [report, report, ...] }, oldest first.
 var reports_by_room: Dictionary = {}
+## Other events per room (player deaths, door knockdowns), same layout.
+var events_by_room: Dictionary = {}
 
 
 ## Called by each room in its _ready(). Restarting the same room keeps its memory.
@@ -24,11 +26,28 @@ func enter_room(room_id: StringName) -> void:
 ## Called when a room is beaten: its memory is no longer needed.
 func clear_room(room_id: StringName) -> void:
 	reports_by_room.erase(room_id)
+	events_by_room.erase(room_id)
 
 
 ## Reports for the current room.
 func get_room_reports() -> Array:
 	return reports_by_room.get(current_room_id, [])
+
+
+## Called when the player dies. Expected keys: weapon, killer, player_position.
+func report_player_death(report: Dictionary) -> void:
+	report["type"] = "player_death"
+	report_event(report)
+
+
+## Anything else worth remembering (door knockdowns, player deaths...).
+func report_event(report: Dictionary) -> void:
+	report["room_id"] = current_room_id
+	report["time"] = Time.get_ticks_msec() / 1000.0
+	if not events_by_room.has(current_room_id):
+		events_by_room[current_room_id] = []
+	events_by_room[current_room_id].append(report)
+	print("[TacticTracker] event: %s" % report)
 
 
 ## Called by a target or enemy when it dies.

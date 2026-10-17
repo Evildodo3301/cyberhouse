@@ -10,6 +10,8 @@ var blood_level: BloodLevel = BloodLevel.FULL
 
 ## Anything can ask for a screen shake; the camera listens to this.
 signal shake_requested(strength: float, direction: Vector2)
+## An enemy died (the room listens to know when it's cleared).
+signal enemy_died(enemy: Node2D)
 ## A loud sound happened at `position`. Enemies (M2) will listen to this to
 ## "hear" things. `loudness` 1.0 = the whole room hears it.
 signal noise_made(position: Vector2, loudness: float)

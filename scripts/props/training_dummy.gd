@@ -8,7 +8,11 @@ extends Node2D
 @export var respawn_time: float = 1.5
 @export var color: Color = Color(1.0, 0.75, 0.2)   # neon amber
 
+## Seconds it stays down after a door hits it.
+@export var knockdown_time: float = 1.5
+
 var _alive: bool = true
+var _knocked: bool = false
 var _start_position: Vector2
 
 
@@ -40,6 +44,19 @@ func take_hit(attacker: Node2D, direction: Vector2, weapon: String) -> void:
 	visible = true
 
 
+## A door slammed into it: it lies down for a moment (still killable).
+func knock_down(_by: Node, direction: Vector2) -> void:
+	if not _alive or _knocked:
+		return
+	_knocked = true
+	var tween := create_tween()
+	tween.tween_property(self, "position", position + direction * 12.0, 0.12)
+	queue_redraw()
+	await get_tree().create_timer(knockdown_time).timeout
+	_knocked = false
+	queue_redraw()
+
+
 ## Sends the "death report" the learning system (M3) will learn from.
 func _report_death(attacker: Node2D, weapon: String) -> void:
 	var player_speed := 0.0
@@ -56,5 +73,8 @@ func _report_death(attacker: Node2D, weapon: String) -> void:
 
 
 func _draw() -> void:
+	if _knocked:
+		draw_circle(Vector2.ZERO, 6.0, color.darkened(0.4))   # lying down
+		return
 	draw_circle(Vector2.ZERO, 7.0, color)
 	draw_circle(Vector2.ZERO, 3.0, Color(0.1, 0.05, 0.15))

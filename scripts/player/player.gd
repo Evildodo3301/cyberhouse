@@ -219,11 +219,16 @@ func is_alive() -> bool:
 
 
 ## One hit kills, for the player too (bomb now, enemies in M2).
-func take_hit(_attacker: Node2D, direction: Vector2, weapon: String) -> void:
+func take_hit(attacker: Node2D, direction: Vector2, weapon: String) -> void:
 	if not _alive:
 		return
 	_alive = false
 	velocity = Vector2.ZERO
+	TacticTracker.report_player_death({
+		"weapon": weapon,
+		"killer": attacker.name if attacker else "",
+		"player_position": global_position,
+	})
 	var gore := get_tree().get_first_node_in_group("gore")
 	if gore:
 		gore.add_kill(global_position, direction, body_color, weapon)
@@ -242,12 +247,19 @@ func _draw() -> void:
 	if not _alive:
 		return   # the body is painted on the floor by the gore layer
 
-	# Aim line: shows where the swing will go before you release.
-	var aim := get_aim_input()
-	if aim != Vector2.ZERO and _attack_state == AttackState.READY:
+	# Aim line: always shows where a swing or bomb will go.
+	# Right stick held: it follows the right stick.
+	# Otherwise: it follows the way you face, which follows the left stick.
+	if _attack_state == AttackState.READY:
+		var aim := get_aim_input()
+		var aiming := aim != Vector2.ZERO
+		if not aiming:
+			aim = facing
 		var dir := assisted_direction(aim)
-		var line_color := Color(accent_color, 0.9 if dir != aim else 0.35)
-		draw_line(dir * 10.0, dir * settings.aim_assist_range, line_color, 1.0)
+		var locked := dir != aim
+		var alpha := 0.9 if locked else (0.35 if aiming else settings.move_aim_line_alpha)
+		var reach := settings.aim_assist_range if aiming or locked else settings.melee_range + 6.0
+		draw_line(dir * 10.0, dir * reach, Color(accent_color, alpha), 1.0)
 
 	# Body and a "visor" showing which way he faces.
 	draw_circle(Vector2.ZERO, 7.0, body_color)

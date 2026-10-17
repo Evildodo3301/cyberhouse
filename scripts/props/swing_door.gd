@@ -1,0 +1,121 @@
+class_name SwingDoor
+extends Node2D
+## A swinging door. Walk into it and it bursts open away from you, then
+## swings shut by itself once the doorway is clear. If it swings into someone
+## while it's moving fast, it knocks them down (the classic door-slam move).
+##
+## Place this node at the hinge. The door panel points along +X, so rotate
+## the node to aim the door across the doorway. Enemies (M2) open doors the
+## same way the player does, by walking into them.
+
+## Door length in pixels (a doorway is 2.5 character widths).
+@export var length: float = 40.0
+## How far it swings open, in degrees.
+@export var open_angle_degrees: float = 100.0
+## Swing speed when pushed open (degrees per second). Fast = slam.
+@export var open_speed_degrees: float = 900.0
+## Swing speed when closing by itself (degrees per second).
+@export var close_speed_degrees: float = 220.0
+## Seconds the doorway must be empty before the door starts closing.
+@export var close_delay: float = 0.35
+## The door only knocks people down while swinging at least this fast.
+@export var knockdown_speed_degrees: float = 400.0
+@export var color: Color = Color(0.95, 0.55, 0.15)   # neon orange
+
+## Current angle in degrees (0 = closed, + or - = open to one side).
+var angle: float = 0.0
+## Degrees per second this frame (for the knockdown check).
+var swing_speed: float = 0.0
+
+var _target_angle: float = 0.0
+var _empty_time: float = 0.0
+var _panel: AnimatableBody2D
+var _push_zone: Area2D
+var _already_hit: Array[Node] = []
+
+
+func _ready() -> void:
+	add_to_group("doors")
+	# The solid part: blocks bodies and bullets, layer 5 = "doors".
+	_panel = AnimatableBody2D.new()
+	_panel.sync_to_physics = false
+	_panel.collision_layer = 16
+	_panel.collision_mask = 0
+	var shape := CollisionShape2D.new()
+	var rect := RectangleShape2D.new()
+	rect.size = Vector2(length, 4.0)
+	shape.shape = rect
+	shape.position = Vector2(length * 0.5, 0.0)
+	_panel.add_child(shape)
+	add_child(_panel)
+	# The push zone: a slightly wider invisible box around the closed door.
+	# Anyone standing in it pushes the door open.
+	_push_zone = Area2D.new()
+	_push_zone.collision_layer = 0
+	_push_zone.collision_mask = 2 | 8   # 2 = player, 8 = enemy bodies
+	_push_zone.monitorable = false
+	var zone_shape := CollisionShape2D.new()
+	var zone_rect := RectangleShape2D.new()
+	zone_rect.size = Vector2(length, 26.0)
+	zone_shape.shape = zone_rect
+	zone_shape.position = Vector2(length * 0.5, 0.0)
+	_push_zone.add_child(zone_shape)
+	add_child(_push_zone)
+
+
+func _physics_process(delta: float) -> void:
+	var pushers := _push_zone.get_overlapping_bodies()
+	if pushers.is_empty():
+		_empty_time += delta
+		if _empty_time >= close_delay:
+			_target_angle = 0.0
+	else:
+		_empty_time = 0.0
+		if is_zero_approx(_target_angle):
+			# Open AWAY from whoever pushed: find which side they're on.
+			var side := _side_of(pushers[0].global_position)
+			_target_angle = -side * open_angle_degrees
+			_already_hit.clear()
+
+	var opening := absf(_target_angle) > absf(angle)
+	var speed := open_speed_degrees if opening else close_speed_degrees
+	var new_angle := move_toward(angle, _target_angle, speed * delta)
+	swing_speed = absf(new_angle - angle) / maxf(delta, 0.0001)
+	var moving_dir := signf(new_angle - angle)
+	angle = new_angle
+	_panel.rotation = deg_to_rad(angle)
+	if swing_speed >= knockdown_speed_degrees:
+		_check_knockdowns(moving_dir)
+	queue_redraw()
+
+
+## +1 or -1 depending on which side of the closed door `pos` is.
+func _side_of(pos: Vector2) -> float:
+	var local := to_local(pos)
+	return 1.0 if local.y >= 0.0 else -1.0
+
+
+## Anyone the panel sweeps into while moving fast gets knocked down.
+func _check_knockdowns(moving_dir: float) -> void:
+	var tip_dir := Vector2.from_angle(deg_to_rad(angle))
+	# The panel moves along its normal; this is the side it is moving toward.
+	var push_dir := tip_dir.orthogonal() * -moving_dir
+	var victims := get_tree().get_nodes_in_group("targets") + get_tree().get_nodes_in_group("player")
+	for victim in victims:
+		if victim in _already_hit or not victim.has_method("knock_down") or not victim.is_alive():
+			continue
+		var local := to_local(victim.global_position)
+		var along := local.dot(tip_dir)
+		if along < 4.0 or along > length + 2.0:
+			continue
+		var across := local.dot(tip_dir.orthogonal()) * -moving_dir
+		if across < -2.0 or across > 10.0:
+			continue   # not right in front of the moving panel
+		_already_hit.append(victim)
+		victim.knock_down(self, global_transform.basis_xform(push_dir).normalized())
+
+
+func _draw() -> void:
+	var tip := Vector2.from_angle(deg_to_rad(angle)) * length
+	draw_line(Vector2.ZERO, tip, color, 3.0)
+	draw_circle(Vector2.ZERO, 2.5, color.lightened(0.3))   # hinge
