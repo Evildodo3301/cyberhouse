@@ -8,23 +8,34 @@ extends CanvasLayer
 @export var input_delay: float = 0.25
 
 var _shown_at_ms: int = -1
+var _tint: ColorRect
+var _label: Label
 
 
 func _ready() -> void:
 	layer = 10   # draw above the touch controls
 	visible = false
-	var tint := ColorRect.new()
+	_tint = ColorRect.new()
+	var tint := _tint
 	tint.color = Color(0.6, 0.0, 0.1, 0.35)
 	tint.set_anchors_preset(Control.PRESET_FULL_RECT)
 	tint.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(tint)
-	var label := Label.new()
+	_label = Label.new()
+	var label := _label
 	label.text = "TAP TO RETRY"
 	label.add_theme_font_size_override("font_size", 28)
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(label)
+
+
+## Same screen with other words and colour (used for LEVEL COMPLETE).
+func show_message(text: String, tint_color: Color) -> void:
+	_label.text = text
+	_tint.color = tint_color
+	show_death()
 
 
 func show_death() -> void:

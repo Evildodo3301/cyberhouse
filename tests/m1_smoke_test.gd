@@ -306,7 +306,7 @@ func _initialize() -> void:
 	# 17. Shoot a target far beyond punch reach.
 	dummy = main.get_node("Dummy2")
 	player.global_position = Vector2(60, 170)
-	dummy.global_position = Vector2(150, 170)
+	dummy.global_position = Vector2(120, 170)
 	await wait_frames(3)
 	player.facing = Vector2.RIGHT
 	await wait_frames(1)
