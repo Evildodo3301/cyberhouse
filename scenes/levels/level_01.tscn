@@ -43,6 +43,28 @@ layout = "##############################################
 #..............#.g............#..C...........#
 #..............#..............#..............#
 ##############################################"
+furniture = "bed_green 1 8
+plant 13 9
+rug_oval 9 2
+sofa 19 1
+table 24 1
+rug_orange 19 4
+bed_blue 43 1
+plant 31 1
+cabinet 33 1
+rug_green 39 3
+rug_orange 3 17
+plant 1 13
+desk 13 22
+books 1 22
+sofa 23 22
+lamp 22 22
+stool 28 13
+rug_blue 19 19
+table 32 13
+chair 34 13
+bed_green 43 21
+plant 35 22"
 
 [node name="Player" parent="." instance=ExtResource("4_player")]
 

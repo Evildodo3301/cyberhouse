@@ -52,7 +52,10 @@ func _initialize() -> void:
 	check(civilian.state == 1, "entering a room alerts its enemy")
 
 	# Looks: the player wears the pink sheet, every enemy the cop sheet.
-	check(player._sprite != null and player._sprite.texture.resource_path.ends_with("player.png"), "the player has the pink character sprite")
+	check(player._sprite != null and player._sprite.texture.resource_path.ends_with("player_torso.png"), "the player wears the pink template torso")
+	check(player._legs_sprite != null and player._legs_sprite.get_parent().name == "Legs", "the template's feet are on the legs (they turn apart)")
+	var pieces := map.get_children().filter(func(c): return c is Sprite2D and c.region_enabled)
+	check(pieces.size() == 22, "22 pieces of furniture placed (%d)" % pieces.size())
 	check(enemies.all(func(e): return e.sheet.resource_path.ends_with("cop.png")), "every enemy looks like a cop")
 	var roamers := enemies.filter(func(e): return not e.stays_in_room).size()
 	print("      roamers: ", enemies.filter(func(e): return not e.stays_in_room).map(func(e): return e.name))
@@ -94,6 +97,12 @@ func _initialize() -> void:
 			if e.stays_in_room and e.is_alive() and map.room_at(e.global_position) != e._home_room and not left_room.has(e.name):
 				left_room.append(e.name)
 	check(left_room.is_empty(), "stay-in-room enemies stop at their doorway %s" % [left_room])
+	var holding := []
+	for door in root.get_tree().get_nodes_in_group("doors"):
+		for body in door._push_zone.get_overlapping_bodies():
+			if body.is_in_group("enemies") and body.stays_in_room:
+				holding.append(body.name)
+	check(holding.is_empty(), "waiting enemies never hold a door open %s" % [holding])
 
 	# Kill everyone: the exit opens; walk in: LEVEL COMPLETE.
 	player.global_position = Vector2(3 * 16 + 8, 20 * 16 + 8)

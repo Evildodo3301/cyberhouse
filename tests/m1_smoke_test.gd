@@ -175,8 +175,29 @@ func _initialize() -> void:
 	await wait_frames(45)
 	touch(0, Vector2(140, 250), false)
 	check(player.global_position.x > 312.0, "player walks through the doorway")
-	await wait_frames(90)
+	var open_sign := signf(door.angle)
+	var wobbled := false
+	for i in 180:
+		await physics_frame
+		if signf(door.angle) == -open_sign and absf(door.angle) > 5.0:
+			wobbled = true
 	check(is_zero_approx(door.angle), "door swings shut by itself")
+	check(wobbled, "it wobbles past closed before it settles")
+
+	# 9b. A bullet that hits the door knocks it a little way open, then it shuts.
+	player.global_position = Vector2(360, 140)
+	player.equip(load("res://data/weapons/pistol.tres"), 8)
+	await wait_frames(2)
+	var bullet: Bullet = preload("res://scenes/weapons/bullet.tscn").instantiate()
+	main.add_child(bullet)
+	bullet.fire(player.global_position, door.center() - player.global_position, player.weapon, player)
+	var widest := 0.0
+	for i in 30:
+		await physics_frame
+		widest = maxf(widest, absf(door.angle))
+	check(widest > 10.0 and widest < 40.0, "a shot nudges the door open a little (%.0f degrees)" % widest)
+	await wait_frames(150)
+	check(is_zero_approx(door.angle), "the nudged door shuts again")
 
 	# 10. A door slammed open knocks down whoever is behind it.
 	await reload_room(false)

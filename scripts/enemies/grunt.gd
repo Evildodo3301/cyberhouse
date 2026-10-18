@@ -345,12 +345,13 @@ func _move_to(target: Vector2, speed: float) -> bool:
 
 
 ## True if a stay-in-room grunt's next step would take it into a doorway.
-## It looks 10 px ahead, so it stops before it can push the door open.
+## It looks 16 px ahead, so it stops far enough back that it can't hold the
+## door open by standing in its push zone.
 func _leaving_room(direction: Vector2) -> bool:
 	if not stays_in_room or _home_room < 0:
 		return false
 	var level := get_tree().get_first_node_in_group("level")
-	return level != null and level.leaves_room(_home_room, global_position + direction * 10.0)
+	return level != null and level.leaves_room(_home_room, global_position + direction * 16.0)
 
 
 ## BOMB counter: keeps a gap from other grunts so one bomb can't get them all.

@@ -14,17 +14,48 @@ extends Node2D
 ##
 ## Rooms are worked out automatically: floor areas separated by walls and
 ## doorways. Enemies notice you the moment you step into their room.
+##
+## Furniture goes in a second list, one item per line: "sofa 17 1" puts a
+## sofa with its top-left corner on tile (17, 1). Solid pieces block you,
+## enemies and bullets (enemies path round them); rugs are floor decoration.
+## Art: Pixel 16 Interiors (free version) by zedpxl, see CREDITS.md.
 
 const TILE := 16
 const GRUNT_SCENE := preload("res://scenes/enemies/grunt.tscn")
 const DOOR_SCENE := preload("res://scenes/props/swing_door.tscn")
 const PICKUP_SCENE := preload("res://scenes/weapons/weapon_pickup.tscn")
 const EXIT_SCRIPT := preload("res://scripts/levels/exit_zone.gd")
+const INTERIORS := preload("res://assets/levels/interiors.png")
+
+## Furniture in the interiors sheet: region in the sheet, and whether it is solid.
+const FURNITURE := {
+	"bed_green": [Rect2(16, 96, 23, 32), true],
+	"bed_blue": [Rect2(16, 128, 23, 32), true],
+	"table": [Rect2(49, 107, 30, 21), true],
+	"stool": [Rect2(83, 103, 11, 9), true],
+	"cabinet": [Rect2(99, 115, 12, 13), true],
+	"books": [Rect2(66, 131, 10, 13), true],
+	"plant": [Rect2(49, 140, 12, 20), true],
+	"lamp": [Rect2(68, 148, 9, 12), true],
+	"sofa": [Rect2(82, 131, 44, 26), true],
+	"desk": [Rect2(129, 147, 14, 13), true],
+	"chair": [Rect2(145, 142, 14, 18), true],
+	"chair_side": [Rect2(161, 141, 13, 19), true],
+	"rug_oval": [Rect2(162, 65, 27, 14), false],
+	"rug_blue": [Rect2(162, 81, 27, 14), false],
+	"rug_orange": [Rect2(128, 80, 32, 16), false],
+	"rug_green": [Rect2(133, 101, 36, 22), false],
+}
+## Floor tiles in the interiors sheet. Rooms take turns: wood, brick, wood...
+const WOOD_TILES := [Rect2(96, 48, 16, 16), Rect2(112, 48, 16, 16)]
+const BRICK_TILES := [Rect2(48, 32, 16, 16), Rect2(48, 48, 16, 16)]
 
 @export_multiline var layout: String = ""
+## Furniture, one "name x y" per line (names: see FURNITURE).
+@export_multiline var furniture: String = ""
+## Darkens the floor tiles so the neon walls, blood and characters stand out.
+@export var floor_tint: Color = Color(0.62, 0.55, 0.62)
 @export var wall_color: Color = Color(0.55, 0.2, 1.0)    # neon purple
-@export var floor_color: Color = Color(0.03, 0.02, 0.06)
-@export var grid_color: Color = Color(0.2, 0.1, 0.35, 0.6)
 ## Share of enemies (0 to 1) that will chase you out of their room. The rest
 ## stop at their own doorway. Early levels keep this low. Which enemies roam
 ## is fixed by map order, so it is the same on every retry.
@@ -48,10 +79,11 @@ func _ready() -> void:
 	_find_rooms()
 	_build_walls()
 	_build_doorways()
+	_place_furniture()
 	_spawn_things()
 	_build_navigation()
 	var floor_drawer := Node2D.new()
-	floor_drawer.z_index = -1   # under the blood
+	floor_drawer.z_index = -2   # under the rugs and the blood
 	floor_drawer.draw.connect(_draw_floor.bind(floor_drawer))
 	add_child(floor_drawer)
 	var wall_drawer := Node2D.new()
@@ -147,6 +179,41 @@ func _build_walls() -> void:
 			var shape := CollisionShape2D.new()
 			var rectangle := RectangleShape2D.new()
 			rectangle.size = rect.size
+			shape.shape = rectangle
+			body.add_child(shape)
+			add_child(body)
+
+
+## Puts each furniture line's sprite down; solid pieces get a body that
+## blocks movement and bullets, and the enemies' pathfinding goes round it.
+func _place_furniture() -> void:
+	for line in furniture.strip_edges().split("\n", false):
+		var parts := line.strip_edges().split(" ", false)
+		if parts.size() != 3 or not FURNITURE.has(parts[0]):
+			push_warning("LevelMap: bad furniture line '%s'" % line)
+			continue
+		var region: Rect2 = FURNITURE[parts[0]][0]
+		var solid: bool = FURNITURE[parts[0]][1]
+		var piece := Sprite2D.new()
+		piece.name = parts[0].capitalize().replace(" ", "")
+		piece.texture = INTERIORS
+		piece.region_enabled = true
+		piece.region_rect = region
+		piece.centered = false
+		piece.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		piece.position = Vector2(int(parts[1]), int(parts[2])) * TILE
+		if not solid:
+			piece.z_index = -1   # rugs: on the floor, under the blood
+		add_child(piece)
+		if solid:
+			var body := StaticBody2D.new()
+			body.collision_layer = 1
+			body.collision_mask = 0
+			body.add_to_group("nav_walls")
+			body.position = piece.position + region.size * 0.5
+			var shape := CollisionShape2D.new()
+			var rectangle := RectangleShape2D.new()
+			rectangle.size = region.size - Vector2(2, 2)
 			shape.shape = rectangle
 			body.add_child(shape)
 			add_child(body)
@@ -259,8 +326,10 @@ func _build_navigation() -> void:
 func _draw_floor(canvas: Node2D) -> void:
 	for at in _floor_tiles:
 		var rect := Rect2(Vector2(at) * TILE, Vector2.ONE * TILE)
-		canvas.draw_rect(rect, floor_color)
-		canvas.draw_rect(rect, grid_color, false, 1.0)
+		var room: int = _room_of_tile.get(at, 0)   # doorways get the wood floor
+		var tiles: Array = WOOD_TILES if room % 2 == 0 else BRICK_TILES
+		var pick: Rect2 = tiles[(at.x * 7 + at.y * 13) % tiles.size()]
+		canvas.draw_texture_rect_region(INTERIORS, rect, pick, floor_tint)
 
 
 func _draw_walls(canvas: Node2D) -> void:

@@ -38,10 +38,14 @@ const CROSSHAIR_TEXTURE := preload("res://assets/ui/crosshair.png")
 @export var accent_color: Color = Color(0.16, 0.94, 1.0) # neon cyan
 
 @export_group("Look")
-## Sprite sheet in the enemy layout (64 x 64 cells, 12 per row, drawn facing
-## up; row 1 = walk cycle, row 2 = corpses). Temporary: the civilian sheet
-## recoloured pink and cyan. Empty = placeholder shapes.
-@export var sheet: Texture2D = preload("res://assets/characters/player.png")
+## Sprite sheets: the comedylife top-down character template (one row of
+## 38 frames, 64 x 64, drawn facing up), recoloured pink and cyan and split
+## in two so the legs and torso can turn apart. Empty = placeholder shapes.
+## Frames: 0-1 idle, 2-11 walk, 12-23 rifle, 24-35 pistol, 36-37 die.
+@export var torso_sheet: Texture2D = preload("res://assets/characters/player_torso.png")
+@export var legs_sheet: Texture2D = preload("res://assets/characters/player_legs.png")
+## The whole body in one sheet, used for the corpse.
+@export var body_sheet: Texture2D = preload("res://assets/characters/player_body.png")
 ## Sheet pixels to room pixels (same as the enemies).
 @export var sprite_scale: float = 0.6
 ## Room pixels walked per walk-cycle frame.
@@ -76,11 +80,16 @@ var _swing_flash: float = 0.0   # how long the swing arc stays visible
 var _stride: float = 0.0   # distance walked, drives the step animation
 var _muzzle_flash: float = 0.0   # seconds the flash at the barrel stays visible
 var _crosshair: Sprite2D
-var _sprite: Sprite2D   # the body, on the torso so it turns with the aim
+var _sprite: Sprite2D        # arms, body and head, on the torso (turns with the aim)
+var _legs_sprite: Sprite2D   # the feet, on the legs (turn with the walk)
+var _idle_time: float = 0.0
 
-const SHEET_COLUMNS := 12
-const PUNCH_FRAME := 3
-const CLEAN_CORPSES := [0, 2, 4, 6, 8, 9, 10, 11]
+const SHEET_COLUMNS := 38
+const IDLE_FRAMES := [0, 1]
+const WALK_FRAMES := [2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+const PISTOL_IDLE_FRAMES := [24, 25]
+const PISTOL_WALK_FRAMES := [26, 27, 28, 29, 30, 31, 32, 33, 34, 35]
+const DIE_FRAMES := [36, 37]
 
 @onready var _legs: Node2D = $Legs
 @onready var _torso: Node2D = $Torso
@@ -96,17 +105,10 @@ func _ready() -> void:
 	# The parts are plain nodes so art can later drop a sprite into each one.
 	_legs.draw.connect(_draw_legs)
 	_torso.draw.connect(_draw_torso)
-	if sheet:
-		_sprite = Sprite2D.new()
-		_sprite.texture = sheet
-		_sprite.hframes = SHEET_COLUMNS
-		_sprite.vframes = 2
-		_sprite.scale = Vector2.ONE * sprite_scale
-		_sprite.rotation = PI * 0.5   # the sheet faces up, the torso faces right
-		_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-		var material := ShaderMaterial.new()
-		material.shader = preload("res://shaders/outline.gdshader")
-		_sprite.material = material
+	if torso_sheet and legs_sheet:
+		_legs_sprite = _make_sprite(legs_sheet)
+		_legs.add_child(_legs_sprite)
+		_sprite = _make_sprite(torso_sheet)
 		_sprite.show_behind_parent = true   # the gun in hand is drawn on top
 		_torso.add_child(_sprite)
 	_crosshair = Sprite2D.new()
@@ -199,12 +201,15 @@ func _update_body(delta: float) -> void:
 		_stride = 0.0   # idle: feet back together under the torso
 	_legs.rotation = legs_angle
 	if _sprite:
-		if _attack_state == AttackState.WINDUP or _swing_flash > 0.0:
-			_sprite.frame = PUNCH_FRAME
-		elif speed > settings.legs_idle_speed:
-			_sprite.frame = int(_stride / stride_per_frame) % SHEET_COLUMNS
+		_idle_time += delta
+		var walking := speed > settings.legs_idle_speed
+		var step := int(_stride / stride_per_frame)
+		var idle_step := int(_idle_time * 2.0)   # slow breathing, 2 frames a second
+		if has_gun():
+			_sprite.frame = PISTOL_WALK_FRAMES[step % 10] if walking else PISTOL_IDLE_FRAMES[idle_step % 2]
 		else:
-			_sprite.frame = 0
+			_sprite.frame = WALK_FRAMES[step % 10] if walking else IDLE_FRAMES[idle_step % 2]
+		_legs_sprite.frame = WALK_FRAMES[step % 10] if walking else IDLE_FRAMES[0]
 
 
 ## Aim assist: if a target sits close to the aim line, return the direction
@@ -460,6 +465,7 @@ func take_hit(attacker: Node2D, direction: Vector2, weapon: String) -> void:
 		gore.add_kill(global_position, direction, body_color, weapon, _corpse())
 	if _sprite:
 		_sprite.visible = false
+		_legs_sprite.visible = false
 	died.emit(weapon)
 	Game.shake(settings.big_shake)
 	if settings.big_vibration_ms > 0:
@@ -511,7 +517,7 @@ func _draw() -> void:
 
 	# Muzzle flash at the end of the barrel.
 	if _muzzle_flash > 0.0:
-		draw_circle(_attack_direction * 11.0 + _attack_direction.rotated(PI * 0.5) * 3.2, 3.0, Color(1, 0.95, 0.6))
+		draw_circle(_attack_direction * 12.0, 3.0, Color(1, 0.95, 0.6))
 	if has_gun():
 		return   # the swing arcs below are for melee only
 
@@ -534,12 +540,7 @@ func _draw_legs() -> void:
 	var step := sin(_stride / maxf(settings.stride_length, 1.0) * TAU) * 6.0
 	var foot_color := body_color.darkened(0.6)
 	if _sprite:
-		# Small dark shoes under the sprite, only while walking.
-		if _stride > 0.0:
-			foot_color = Color(0.12, 0.07, 0.05)
-			_legs.draw_rect(Rect2(Vector2(step - 2.5, -3.5), Vector2(5, 2.5)), foot_color)
-			_legs.draw_rect(Rect2(Vector2(-step - 2.5, 1.0), Vector2(5, 2.5)), foot_color)
-		return
+		return   # the legs sprite shows the feet
 	_legs.draw_rect(Rect2(Vector2(step - 3.0, -5.0), Vector2(6, 3.5)), foot_color)
 	_legs.draw_rect(Rect2(Vector2(-step - 3.0, 1.5), Vector2(6, 3.5)), foot_color)
 
@@ -549,7 +550,7 @@ func _draw_torso() -> void:
 		return
 	if _sprite:
 		if has_gun():
-			_torso.draw_rect(Rect2(3, 2, 7, 2.5), weapon.color)   # the gun in the right hand
+			_torso.draw_rect(Rect2(5, -1.25, 6, 2.5), weapon.color)   # held out in both hands
 		return
 	# Shoulders: an oval, wide across, narrow front to back.
 	_torso.draw_set_transform(Vector2.ZERO, 0.0, Vector2(0.6, 1.0))
@@ -561,10 +562,24 @@ func _draw_torso() -> void:
 		_torso.draw_rect(Rect2(8, -1.5, 7, 3), weapon.color)   # the gun in hand
 
 
-## The body the gore layer paints when you die. Always a clean pose: the
-## recolour turned the sheet's head-burst blood pink, and the gore adds real blood.
+## One part of the body, from a template sheet: pixel-sharp, outlined,
+## turned so the sheet's "up" points along the part's +x.
+func _make_sprite(texture: Texture2D) -> Sprite2D:
+	var sprite := Sprite2D.new()
+	sprite.texture = texture
+	sprite.hframes = SHEET_COLUMNS
+	sprite.scale = Vector2.ONE * sprite_scale
+	sprite.rotation = PI * 0.5
+	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	var material := ShaderMaterial.new()
+	material.shader = preload("res://shaders/outline.gdshader")
+	sprite.material = material
+	return sprite
+
+
+## The body the gore layer paints when you die: the template's "die" pose.
 func _corpse() -> Dictionary:
-	if sheet == null:
+	if body_sheet == null:
 		return {}
-	var region := Rect2(CLEAN_CORPSES.pick_random() * 64, 64, 64, 64)
-	return {"texture": sheet, "region": region, "burst_region": region, "scale": sprite_scale}
+	var region := Rect2(DIE_FRAMES[1] * 64, 0, 64, 64)
+	return {"texture": body_sheet, "region": region, "burst_region": region, "scale": sprite_scale}
