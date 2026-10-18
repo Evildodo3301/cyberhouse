@@ -20,6 +20,8 @@ func _ready() -> void:
 	touch_controls.bomb_button.bombs_left = player.bombs_left
 	player.bombs_changed.connect(func(count): touch_controls.bomb_button.bombs_left = count)
 	player.died.connect(func(_weapon): death_screen.show_death())
+	# Weapon and ammo in the top-left corner.
+	_add_weapon_label()
 	Game.enemy_died.connect(_on_enemy_died)
 
 
@@ -30,6 +32,22 @@ func _on_enemy_died(_enemy: Node2D) -> void:
 	# Room beaten: the learning system can forget this room.
 	TacticTracker.clear_room(room_id)
 	_show_banner("ROOM CLEAR")
+
+
+func _add_weapon_label() -> void:
+	var layer := CanvasLayer.new()
+	layer.layer = 4
+	var label := Label.new()
+	label.position = Vector2(44, 8)   # right of the pause button
+	label.add_theme_font_size_override("font_size", 14)
+	label.add_theme_color_override("font_color", Color(1, 1, 1, 0.85))
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(label)
+	add_child(layer)
+	var show_weapon := func(weapon: WeaponData, ammo: int):
+		label.text = weapon.display_name + ("  %d" % ammo if ammo >= 0 else "")
+	player.weapon_changed.connect(show_weapon)
+	show_weapon.call(player.weapon, player.ammo)
 
 
 ## Big text across the top of the screen (placeholder until the UI pass).

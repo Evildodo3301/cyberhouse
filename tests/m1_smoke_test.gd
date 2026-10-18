@@ -252,5 +252,113 @@ func _initialize() -> void:
 			break
 	check(crossed, "grunt finds a path through the door into your room")
 
+	# 14. Split body: left stick walks right while the right stick aims up.
+	# Torso faces the aim, legs face the walk.
+	await reload_room(false)
+	main = current_scene
+	player = main.get_node("Player")
+	player.global_position = Vector2(200, 200)
+	await wait_frames(2)
+	var aim_at := Vector2(screen.x * 0.75, 250)
+	touch(0, Vector2(100, 250), true)
+	drag(0, Vector2(140, 250))
+	touch(1, aim_at, true)
+	drag(1, aim_at + Vector2(0, -40))
+	await wait_frames(20)
+	check(Vector2.from_angle(player.get_node("Torso").rotation).dot(Vector2.UP) > 0.9, "torso turns to the right stick while walking")
+	check(Vector2.from_angle(player.get_node("Legs").rotation).dot(Vector2.RIGHT) > 0.95, "legs face the way you walk, not the aim")
+	touch(1, aim_at + Vector2(0, -40), false)   # lifting the thumb also swings
+	await wait_frames(15)
+	check(Vector2.from_angle(player.get_node("Torso").rotation).dot(Vector2.RIGHT) > 0.9, "no aim: torso follows the walk again")
+	touch(0, Vector2(140, 250), false)
+	await wait_frames(10)
+	check(Vector2.from_angle(player.get_node("Legs").rotation).dot(Vector2.RIGHT) > 0.95, "standing still: legs stay put")
+
+	# --------------------------------------------- crosshair, guns, rooms
+	# 15. Fists at the start; the crosshair sits at punch reach and turns red
+	# when the punch would land.
+	await reload_room(false)
+	main = current_scene
+	player = main.get_node("Player")
+	check(player.weapon.id == &"fists" and player.ammo == -1, "every level starts with bare fists")
+	player.global_position = Vector2(200, 230)
+	player.facing = Vector2.RIGHT
+	await wait_frames(2)
+	var crosshair: Sprite2D = player._crosshair
+	check(absf(crosshair.global_position.distance_to(player.global_position) - player.weapon.reach) < 1.0, "crosshair sits at the end of the punch reach")
+	check(not player.crosshair_on_target, "crosshair is white with nobody in reach")
+	dummy = main.get_node("Dummy1")
+	dummy.global_position = player.global_position + Vector2(18, 0)
+	await wait_frames(2)
+	check(player.crosshair_on_target and crosshair.modulate.r > 0.9 and crosshair.modulate.g < 0.3, "crosshair turns red over a target")
+
+	# 16. Walk over the pistol on the floor: picked up with a full magazine.
+	var pickup = main.get_node("PistolPickup")
+	player.global_position = pickup.global_position + Vector2(30, 0)
+	dummy.global_position = Vector2(200, 60)
+	touch(0, Vector2(100, 250), true)
+	drag(0, Vector2(60, 250))
+	await wait_frames(30)
+	touch(0, Vector2(60, 250), false)
+	check(player.weapon.id == &"pistol" and player.ammo == 8, "walking over a gun picks it up")
+	check(not is_instance_valid(pickup), "the gun is gone from the floor")
+
+	# 17. Shoot a target far beyond punch reach.
+	dummy = main.get_node("Dummy2")
+	player.global_position = Vector2(60, 170)
+	dummy.global_position = Vector2(150, 170)
+	await wait_frames(3)
+	player.facing = Vector2.RIGHT
+	await wait_frames(1)
+	check(player.crosshair_on_target, "armed: crosshair reaches the far target and is red")
+	player.request_attack(Vector2.RIGHT)
+	await wait_frames(4)
+	check(not dummy.is_alive(), "a pistol shot kills at range")
+	check(player.ammo == 7, "the shot used one bullet")
+	# Walls stop bullets.
+	dummy = main.get_node("Dummy3")
+	dummy.global_position = Vector2(160, 96)   # behind the pillar at x 120-152
+	player.global_position = Vector2(90, 96)
+	await wait_frames(20)
+	player.request_attack(Vector2.RIGHT)
+	await wait_frames(4)
+	check(dummy.is_alive(), "walls stop bullets")
+	await wait_frames(16)   # let the gun recover
+
+	# 18. Empty the gun: it drops to the floor and you are back to fists.
+	for i in 6:
+		player.request_attack(Vector2.UP)
+		await wait_frames(16)
+	check(player.weapon.id == &"fists", "an empty gun is dropped: back to fists")
+	await wait_frames(30)
+	var empties: Array = root.get_tree().get_nodes_in_group("pickups").filter(func(p): return not p.is_usable())
+	check(empties.size() == 1, "the empty gun lies on the floor and can't be picked up")
+
+	# 19. Enemies notice you the moment you enter their room, from behind,
+	# but still show '!' for the reaction time first.
+	await reload_room(true)
+	main = current_scene
+	player = main.get_node("Player")
+	main.get_node("GruntPatrol").free()
+	guard = main.get_node("GruntGuard")   # faces left (200 degrees)
+	player.global_position = Vector2(470, 300)   # behind it, out of its cone
+	await wait_frames(3)
+	check(guard.state == 1, "entering its room: noticed at once, even from behind")
+	player.global_position = Vector2(200, 300)
+
+	# 20. A killed enemy drops his gun, flung away from the hit.
+	await reload_room(true)
+	main = current_scene
+	player = main.get_node("Player")
+	main.get_node("GruntPatrol").free()
+	guard = main.get_node("GruntGuard")
+	player.global_position = guard.global_position + Vector2(-15, 0)
+	await wait_frames(1)
+	player.request_attack(Vector2.RIGHT)
+	await wait_frames(30)
+	var drops: Array = root.get_tree().get_nodes_in_group("pickups").filter(func(p): return p.name != "PistolPickup")
+	check(not guard.is_alive() and drops.size() == 1, "a killed grunt drops his gun")
+	check(drops.size() == 1 and drops[0].global_position.x > guard.global_position.x + 8.0, "the gun is flung in the direction of the hit")
+
 	print("\n%s (%d failure(s))" % ["ALL PASSED" if failures == 0 else "SOME FAILED", failures])
 	quit(failures)

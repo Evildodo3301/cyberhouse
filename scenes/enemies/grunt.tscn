@@ -1,7 +1,8 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene load_steps=5 format=3]
 
 [ext_resource type="Script" path="res://scripts/enemies/grunt.gd" id="1_grunt"]
 [ext_resource type="Resource" path="res://data/grunt_settings.tres" id="2_settings"]
+[ext_resource type="Resource" path="res://data/weapons/pistol.tres" id="3_pistol"]
 
 [sub_resource type="CircleShape2D" id="CircleShape2D_body"]
 radius = 7.0
@@ -12,6 +13,7 @@ collision_mask = 17
 motion_mode = 1
 script = ExtResource("1_grunt")
 settings = ExtResource("2_settings")
+carried_weapon = ExtResource("3_pistol")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
 shape = SubResource("CircleShape2D_body")

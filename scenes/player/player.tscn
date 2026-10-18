@@ -15,3 +15,7 @@ settings = ExtResource("2_settings")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
 shape = SubResource("CircleShape2D_body")
+
+[node name="Legs" type="Node2D" parent="."]
+
+[node name="Torso" type="Node2D" parent="."]

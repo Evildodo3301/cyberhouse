@@ -17,23 +17,34 @@ extends Resource
 ## Seconds to stop completely after you let go.
 @export var stop_time: float = 0.05
 
-@export_group("Melee attack")
-## How far the swing reaches (1.5 character widths).
-@export var melee_range: float = 24.0
-## How wide the swing is, in degrees.
-@export var melee_arc_degrees: float = 90.0
-## Short pause before the swing hits, so attacks feel committed.
-@export var windup_time: float = 0.08
-## Time after the swing before you can attack again.
-@export var recovery_time: float = 0.25
+@export_group("Weapons")
+## What you hold at the start of every level. Swing and shot numbers live in
+## the weapon files in res://data/weapons/.
+@export var start_weapon: WeaponData
+## How close you must walk to a weapon on the floor to pick it up.
+@export var pickup_radius: float = 10.0
+
+@export_group("Crosshair")
+## Size of the crosshair in pixels.
+@export var crosshair_size: float = 9.0
+@export var crosshair_color: Color = Color(1, 1, 1, 0.9)
+## Colour when your swing or shot would hit someone right now.
+@export var crosshair_hit_color: Color = Color(1, 0.12, 0.12, 1)
+
+@export_group("Body")
+## How fast the legs turn to face the way you walk. Higher = snappier,
+## lower = the legs lag behind and swing round.
+@export var legs_turn_speed: float = 20.0
+## Below this speed (px/s) the hitman counts as standing still: the legs stop
+## stepping and tuck under the torso.
+@export var legs_idle_speed: float = 4.0
+## Distance covered by one full left-right step cycle.
+@export var stride_length: float = 14.0
 
 @export_group("Aim assist")
-## How visible the aim line is when it just follows your movement
-## (0 = hidden, 1 = as bright as a locked-on aim).
-@export var move_aim_line_alpha: float = 0.3
 ## If a target is within this many degrees of your aim, the swing snaps to it.
 @export var aim_assist_degrees: float = 15.0
-## Aim assist only looks this far away.
+## Aim assist only looks this far away (guns use their own reach instead).
 @export var aim_assist_range: float = 48.0
 ## A quick tap attacks the nearest target within this radius...
 @export var tap_assist_radius: float = 40.0
