@@ -1,25 +1,30 @@
 class_name VoidFlash
 extends Node
-## Each gunshot tints the empty void outside the map with a neon colour that
-## fades in about a fifth of a second. Every shot moves a little further
-## round the colour wheel (pink, purple, blue, cyan...), so rapid fire glides
-## through colours instead of strobing.
+## The void outside the map (everything that isn't floor or wall) is never
+## black: it slowly cycles through neon colours all the time (blue, orange,
+## teal, pink...), and each gunshot flashes it a bright warm colour for an
+## instant. The courtyards and the area round the house show it.
 
-## How fast the flash fades (per second).
-@export var fade_speed: float = 5.0
-## Highest the flash can build up to, even during rapid fire.
-@export var max_strength: float = 0.5
-## How far round the colour wheel each shot moves (1 = a full turn).
-@export var hue_step: float = 0.09
+## Seconds for one full trip round the colour wheel.
+@export var cycle_seconds: float = 8.0
+## How bright and colourful the void is between shots.
+@export var saturation: float = 0.75
+@export var brightness: float = 0.42
+## The colour a shot flashes it.
+@export var flash_color: Color = Color(1.0, 0.62, 0.45)
+## Seconds a shot's flash lasts (about two frames).
+@export var flash_time: float = 0.06
 
+## 1 right after a shot, fading to 0 over flash_time.
 var strength: float = 0.0
-var hue: float = 0.85   # starts on neon pink
+var hue: float = 0.55   # starts on blue
 var _base: Color
 
 
 func _ready() -> void:
 	_base = ProjectSettings.get_setting("rendering/environment/defaults/default_clear_color")
 	Game.shot_fired.connect(_on_shot)
+	RenderingServer.set_default_clear_color(current_color())
 
 
 func _exit_tree() -> void:
@@ -27,18 +32,16 @@ func _exit_tree() -> void:
 
 
 func _on_shot(weapon: WeaponData) -> void:
-	if weapon.void_flash <= 0.0:
-		return
-	hue = fposmod(hue + hue_step, 1.0)
-	strength = minf(maxf(strength, weapon.void_flash), max_strength)
+	if weapon.void_flash > 0.0:
+		strength = clampf(weapon.void_flash, 0.0, 1.0)
 
 
 func current_color() -> Color:
-	return _base.lerp(Color.from_hsv(hue, 0.9, 1.0), strength)
+	var cycle := Color.from_hsv(hue, saturation, brightness)
+	return cycle.lerp(flash_color, strength)
 
 
 func _process(delta: float) -> void:
-	if strength <= 0.0:
-		return
-	strength = maxf(strength - fade_speed * strength * delta - 0.2 * delta, 0.0)
+	hue = fposmod(hue + delta / cycle_seconds, 1.0)
+	strength = maxf(strength - delta / flash_time, 0.0)
 	RenderingServer.set_default_clear_color(current_color())

@@ -2,25 +2,30 @@ class_name LevelMap
 extends Node2D
 ## Builds a whole level from a text map, so a level can be changed by
 ## editing letters instead of placing nodes by hand. One letter = one tile
-## (16 x 16 px, one character width):
+## (tile_px square; 8 px gives thin walls, 16 px = one character width):
 ##
 ##   #  wall              .  floor
+##   (space)  open sky: you can't go there, and the neon void shows through
 ##   D  swinging door     o  open doorway (no door)
 ##      (a straight run of D's or o's in a wall = one doorway)
 ##   P  player start      g  pistol on the floor
-##   C  cop grunt         V  civilian grunt (looks like a cop for now, so
-##                           the player is the only one in pink)
+##   m  machete on the floor
+##   C  cop grunt (drops a pistol)        M  cop grunt (drops a machete)
+##   V  civilian grunt (looks like a cop for now, so the player is the
+##      only one in pink; drops a pistol)
 ##   E  exit (opens once every enemy is dead)
 ##
 ## Rooms are worked out automatically: floor areas separated by walls and
 ## doorways. Enemies notice you the moment you step into their room.
 ##
 ## Furniture goes in a second list, one item per line: "sofa 17 1" puts a
-## sofa with its top-left corner on tile (17, 1). Solid pieces block you,
+## sofa with its top-left corner on tile (17, 1). "floor_brick 5 5" gives
+## the room around tile (5, 5) a brick floor (kitchens, bathrooms); other
+## rooms get wood. Solid pieces block you,
 ## enemies and bullets (enemies path round them); rugs are floor decoration.
 ## Art: Pixel 16 Interiors (free version) by zedpxl, see CREDITS.md.
 
-const TILE := 16
+const MACHETE := preload("res://data/weapons/machete.tres")
 const GRUNT_SCENE := preload("res://scenes/enemies/grunt.tscn")
 const DOOR_SCENE := preload("res://scenes/props/swing_door.tscn")
 const PICKUP_SCENE := preload("res://scenes/weapons/weapon_pickup.tscn")
@@ -51,6 +56,8 @@ const WOOD_TILES := [Rect2(96, 48, 16, 16), Rect2(112, 48, 16, 16)]
 const BRICK_TILES := [Rect2(48, 32, 16, 16), Rect2(48, 48, 16, 16)]
 
 @export_multiline var layout: String = ""
+## Size of one letter in pixels. Doors are as long as their run of D's.
+@export var tile_px: int = 16
 ## Furniture, one "name x y" per line (names: see FURNITURE).
 @export_multiline var furniture: String = ""
 ## Darkens the floor tiles so the neon walls, blood and characters stand out.
@@ -67,6 +74,7 @@ var _rows: PackedStringArray
 var _room_of_tile: Dictionary = {}   # Vector2i -> room index
 var _walls: Array[Rect2] = []
 var _floor_tiles: Array[Vector2i] = []
+var _brick_rooms: Dictionary = {}   # room index -> true
 
 
 func _ready() -> void:
@@ -75,7 +83,7 @@ func _ready() -> void:
 	var width := 0
 	for row in _rows:
 		width = maxi(width, row.length())
-	size_px = Vector2(width, _rows.size()) * TILE
+	size_px = Vector2(width, _rows.size()) * tile_px
 	_find_rooms()
 	_build_walls()
 	_build_doorways()
@@ -100,22 +108,36 @@ func tile(at: Vector2i) -> String:
 
 
 func _tile_center(at: Vector2i) -> Vector2:
-	return (Vector2(at) + Vector2(0.5, 0.5)) * TILE
+	return (Vector2(at) + Vector2(0.5, 0.5)) * tile_px
 
 
 ## Which room `point` is in, or -1 for walls and doorways.
 func room_at(point: Vector2) -> int:
-	return _room_of_tile.get(Vector2i((point / TILE).floor()), -1)
+	return _room_of_tile.get(Vector2i((point / tile_px).floor()), -1)
 
 
 ## True if stepping onto `point` would take you out of room `room`: into a
 ## doorway or another room. Walls count as inside (bumping one is fine).
 func leaves_room(room: int, point: Vector2) -> bool:
-	var at := Vector2i((point / TILE).floor())
+	var at := Vector2i((point / tile_px).floor())
 	if tile(at) in ["D", "o"]:
 		return true
 	var there: int = _room_of_tile.get(at, -1)
 	return there >= 0 and there != room
+
+
+## True if any doorway tile (D or o) is within `radius` px of `point`.
+func near_doorway(point: Vector2, radius: float) -> bool:
+	var reach := int(ceil(radius / tile_px))
+	var center := Vector2i((point / tile_px).floor())
+	for y in range(center.y - reach, center.y + reach + 1):
+		for x in range(center.x - reach, center.x + reach + 1):
+			if not tile(Vector2i(x, y)) in ["D", "o"]:
+				continue
+			var closest := point.clamp(Vector2(x, y) * tile_px, Vector2(x + 1, y + 1) * tile_px)
+			if closest.distance_to(point) <= radius:
+				return true
+	return false
 
 
 func room_count() -> int:
@@ -128,7 +150,7 @@ func room_count() -> int:
 # ------------------------------------------------------------------ build
 
 func _is_open(letter: String) -> bool:
-	return letter != "#" and letter != "D" and letter != "o"
+	return not letter in ["#", "D", "o", " "]
 
 
 ## Flood-fills every floor area that walls and doorways separate.
@@ -158,19 +180,22 @@ func _find_rooms() -> void:
 				_floor_tiles.append(Vector2i(x, y))
 
 
-## One wall body per horizontal run of "#", to keep the physics cheap.
+## One body per horizontal run of "#" (drawn) or " " (open sky, not drawn),
+## to keep the physics cheap.
 func _build_walls() -> void:
 	for y in _rows.size():
 		var x := 0
 		while x < _rows[y].length():
-			if tile(Vector2i(x, y)) != "#":
+			var letter := tile(Vector2i(x, y))
+			if letter != "#" and letter != " ":
 				x += 1
 				continue
 			var start := x
-			while tile(Vector2i(x, y)) == "#" and x < _rows[y].length():
+			while x < _rows[y].length() and tile(Vector2i(x, y)) == letter:
 				x += 1
-			var rect := Rect2(start * TILE, y * TILE, (x - start) * TILE, TILE)
-			_walls.append(rect)
+			var rect := Rect2(start * tile_px, y * tile_px, (x - start) * tile_px, tile_px)
+			if letter == "#":
+				_walls.append(rect)
 			var body := StaticBody2D.new()
 			body.collision_layer = 1   # layer 1 = "world"
 			body.collision_mask = 0
@@ -189,6 +214,9 @@ func _build_walls() -> void:
 func _place_furniture() -> void:
 	for line in furniture.strip_edges().split("\n", false):
 		var parts := line.strip_edges().split(" ", false)
+		if parts.size() == 3 and parts[0] == "floor_brick":
+			_brick_rooms[_room_of_tile.get(Vector2i(int(parts[1]), int(parts[2])), -1)] = true
+			continue
 		if parts.size() != 3 or not FURNITURE.has(parts[0]):
 			push_warning("LevelMap: bad furniture line '%s'" % line)
 			continue
@@ -201,7 +229,7 @@ func _place_furniture() -> void:
 		piece.region_rect = region
 		piece.centered = false
 		piece.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-		piece.position = Vector2(int(parts[1]), int(parts[2])) * TILE
+		piece.position = Vector2(int(parts[1]), int(parts[2])) * tile_px
 		if not solid:
 			piece.z_index = -1   # rugs: on the floor, under the blood
 		add_child(piece)
@@ -237,17 +265,17 @@ func _build_doorways() -> void:
 			var door: Node2D = DOOR_SCENE.instantiate()
 			door.name = "Door%d" % count
 			door.door_id = door.name
-			door.length = length * TILE
+			door.length = length * tile_px
 			if step == Vector2i.RIGHT:
-				door.position = Vector2(at.x * TILE, at.y * TILE + TILE * 0.5)
+				door.position = Vector2(at.x * tile_px, at.y * tile_px + tile_px * 0.5)
 			else:
-				door.position = Vector2(at.x * TILE + TILE * 0.5, at.y * TILE)
+				door.position = Vector2(at.x * tile_px + tile_px * 0.5, at.y * tile_px)
 				door.rotation = PI * 0.5
 			add_child(door)
 
 
 func _spawn_things() -> void:
-	var count := {"C": 0, "V": 0, "g": 0}
+	var count := {"C": 0, "V": 0, "M": 0, "g": 0, "m": 0}
 	for at in _floor_tiles:
 		var letter := tile(at)
 		var spot := _tile_center(at)
@@ -258,13 +286,15 @@ func _spawn_things() -> void:
 					player = get_parent().get_node_or_null("Player")
 				if player:
 					player.global_position = spot
-			"C", "V":
+			"C", "V", "M":
 				count[letter] += 1
 				var grunt: Node2D = GRUNT_SCENE.instantiate()
-				grunt.name = ("Cop%d" if letter == "C" else "Civilian%d") % count[letter]
+				grunt.name = {"C": "Cop%d", "V": "Civilian%d", "M": "Thug%d"}[letter] % count[letter]
 				grunt.position = spot
+				if letter == "M":
+					grunt.carried_weapon = MACHETE
 				# Every 1/roam_chance-th enemy (in map order) is a roamer.
-				var index: int = count["C"] + count["V"]
+				var index: int = count["C"] + count["V"] + count["M"]
 				grunt.stays_in_room = floori(index * roam_chance) == floori((index - 1) * roam_chance)
 				grunt.start_facing_degrees = rad_to_deg(spot.angle_to_point(_room_center(at)))
 				add_child(grunt)
@@ -274,13 +304,20 @@ func _spawn_things() -> void:
 				pickup.name = "Pistol%d" % count["g"]
 				pickup.position = spot
 				add_child(pickup)
+			"m":
+				count["m"] += 1
+				var pickup: Node2D = PICKUP_SCENE.instantiate()
+				pickup.name = "Machete%d" % count["m"]
+				pickup.weapon = MACHETE
+				pickup.position = spot
+				add_child(pickup)
 			"E":
 				pass
 	# The exit: one zone covering every E tile.
 	var exit_rect := Rect2()
 	for at in _floor_tiles:
 		if tile(at) == "E":
-			var tile_rect := Rect2(Vector2(at) * TILE, Vector2.ONE * TILE)
+			var tile_rect := Rect2(Vector2(at) * tile_px, Vector2.ONE * tile_px)
 			exit_rect = tile_rect if exit_rect.size == Vector2.ZERO else exit_rect.merge(tile_rect)
 	if exit_rect.size != Vector2.ZERO:
 		var exit_zone := Node2D.new()
@@ -323,13 +360,18 @@ func _build_navigation() -> void:
 # ---------------------------------------------------------------- drawing
 # Placeholder look until the graphics pass.
 
+## Floor art comes in 16 px squares. With smaller tiles each map tile shows
+## its own part of the square covering it, so the pattern stays seamless.
 func _draw_floor(canvas: Node2D) -> void:
+	var per := maxi(16 / tile_px, 1)   # map tiles per art square, each way
 	for at in _floor_tiles:
-		var rect := Rect2(Vector2(at) * TILE, Vector2.ONE * TILE)
-		var room: int = _room_of_tile.get(at, 0)   # doorways get the wood floor
-		var tiles: Array = WOOD_TILES if room % 2 == 0 else BRICK_TILES
-		var pick: Rect2 = tiles[(at.x * 7 + at.y * 13) % tiles.size()]
-		canvas.draw_texture_rect_region(INTERIORS, rect, pick, floor_tint)
+		var rect := Rect2(Vector2(at) * tile_px, Vector2.ONE * tile_px)
+		var room: int = _room_of_tile.get(at, -1)   # doorways get the wood floor
+		var tiles: Array = BRICK_TILES if _brick_rooms.has(room) else WOOD_TILES
+		var square := Vector2i(at.x / per, at.y / per)
+		var pick: Rect2 = tiles[(square.x * 7 + square.y * 13) % tiles.size()]
+		var part := Vector2(at.x % per, at.y % per) * tile_px
+		canvas.draw_texture_rect_region(INTERIORS, rect, Rect2(pick.position + part, Vector2.ONE * mini(tile_px, 16)), floor_tint)
 
 
 func _draw_walls(canvas: Node2D) -> void:

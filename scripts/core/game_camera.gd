@@ -1,12 +1,18 @@
 class_name GameCamera
 extends Camera2D
 ## Follows the player, leans a little toward where they aim, and shakes on kills.
-## Gunshots use a "kick" instead: three tiny, very quick jolts (a small
-## earthquake) that are over before they can hide anything.
+## Gunshots use a "kick" instead: three quick jolts in random directions,
+## one per frame (about 0.1 s in all, like a small earthquake), with no zoom
+## or rotation, so it is over before it can hide anything.
 
 @export var target: Player
 ## How far (px) the camera leans toward the aim direction.
 @export var look_ahead: float = 20.0
+## How quickly the lean follows the aim (per second). Smooth, so the camera
+## never jumps when you lift your thumb to fire.
+@export var look_ahead_speed: float = 5.0
+## The lean stays this long after you stop aiming (you fire on release).
+@export var look_ahead_hold: float = 0.5
 ## How quickly the shake fades (per second).
 @export var shake_decay: float = 12.0
 
@@ -15,9 +21,12 @@ var _shake_direction: Vector2 = Vector2.ZERO
 ## Gunshot kick: the three jolts still to play, and how long the current one lasts.
 var _kicks: Array[Vector2] = []
 var _kick_time: float = 0.0
+var _lean: Vector2 = Vector2.ZERO
+var _last_aim: Vector2 = Vector2.ZERO
+var _aim_hold: float = 0.0
 
-## Seconds each of the three kick jolts lasts (all three: about 0.1 s).
-const KICK_STEP := 0.035
+## Seconds each of the three kick jolts lasts (one frame at 30 fps).
+const KICK_STEP := 0.033
 
 
 func _ready() -> void:
@@ -30,8 +39,17 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	if target:
+		# Lean toward the aim. Before, the lean snapped back the instant you
+		# lifted your thumb to shoot: a big jump on every shot.
 		var aim := target.get_aim_input()
-		global_position = target.global_position + aim * look_ahead
+		if aim != Vector2.ZERO:
+			_last_aim = aim
+			_aim_hold = look_ahead_hold
+		else:
+			_aim_hold = maxf(_aim_hold - delta, 0.0)
+		var want := _last_aim * look_ahead if _aim_hold > 0.0 else Vector2.ZERO
+		_lean = _lean.lerp(want, clampf(look_ahead_speed * delta, 0.0, 1.0))
+		global_position = target.global_position + _lean
 	# Screen shake = an offset that shrinks every frame. Half of it pushes
 	# in the hit direction (feels like impact), half is random jitter.
 	_shake_strength = lerpf(_shake_strength, 0.0, clampf(shake_decay * delta, 0.0, 1.0))
@@ -49,7 +67,7 @@ func _process(delta: float) -> void:
 ## never turns into a blur.
 func _on_kill(_target: Node2D, direction: Vector2) -> void:
 	if target.has_gun():
-		kick(target.weapon.shake * 1.5, direction)
+		kick(target.weapon.shake * 1.25, direction)
 	else:
 		shake(target.settings.kill_shake, direction)
 
@@ -60,10 +78,13 @@ func shake(strength: float, direction: Vector2 = Vector2.ZERO) -> void:
 	_shake_direction = direction
 
 
-## Gunshot kick: back against the shot, then sideways, then a smaller push
-## back, each for KICK_STEP. `strength` is the first jolt in pixels.
+## Gunshot kick: three jolts of about `strength` pixels, each in a new random
+## direction (the first one leans back against the shot), each for KICK_STEP.
 func kick(strength: float, direction: Vector2) -> void:
-	var back := -direction.normalized()
-	var side := back.orthogonal()
-	_kicks = [back * strength, side * strength * 0.6, -back * strength * 0.4]
+	var back := -direction.normalized() if direction != Vector2.ZERO else Vector2.from_angle(randf() * TAU)
+	_kicks = [
+		back.rotated(randf_range(-0.6, 0.6)) * strength,
+		Vector2.from_angle(randf() * TAU) * strength * 0.8,
+		Vector2.from_angle(randf() * TAU) * strength * 0.5,
+	]
 	_kick_time = 0.0

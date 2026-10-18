@@ -2,12 +2,14 @@ class_name WeaponPickup
 extends Node2D
 ## A weapon lying on the floor. Place one in a level, or an enemy drops one
 ## when it dies (flung a little in the direction it was hit).
-## Walk over it with empty hands to pick it up.
+## Walk over it to pick it up (see PlayerSettings.pickup_mode).
 
 @export var weapon: WeaponData
 ## Shots left in it. -1 = a full gun (weapon.ammo).
 @export var ammo: int = -1
 
+## True for the weapon you just swapped away: it waits until you step off it.
+var ignore_player: bool = false
 var _velocity: Vector2 = Vector2.ZERO
 
 
@@ -44,7 +46,14 @@ func _physics_process(delta: float) -> void:
 			_velocity = Vector2.ZERO
 		_velocity = _velocity.move_toward(Vector2.ZERO, 420.0 * delta)
 	var player := get_tree().get_first_node_in_group("player")
-	if player and player.is_alive() and player.global_position.distance_to(global_position) <= player.settings.pickup_radius:
+	if player == null or not player.is_alive():
+		return
+	var distance: float = player.global_position.distance_to(global_position)
+	if ignore_player:
+		if distance > player.settings.pickup_radius * 2.0:
+			ignore_player = false   # you stepped off: it can be picked up again
+		return
+	if _velocity == Vector2.ZERO and distance <= player.settings.pickup_radius:
 		if player.try_pick_up(self):
 			queue_free()
 
@@ -54,5 +63,9 @@ func _draw() -> void:
 	if weapon == null:
 		return
 	var c := weapon.color if is_usable() else weapon.color.darkened(0.6)
+	if weapon.kind == WeaponData.Kind.MELEE:
+		draw_rect(Rect2(-7, -1, 4, 2.5), Color(0.35, 0.2, 0.1))   # handle
+		draw_colored_polygon(PackedVector2Array([Vector2(-3, -1.5), Vector2(7, -1.5), Vector2(9, 0.5), Vector2(-3, 1.5)]), c)   # blade
+		return
 	draw_rect(Rect2(-5, -1.5, 10, 3), c)    # barrel
 	draw_rect(Rect2(-5, -1.5, 3, 5), c)     # grip

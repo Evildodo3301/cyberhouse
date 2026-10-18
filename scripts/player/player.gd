@@ -83,6 +83,12 @@ var _crosshair: Sprite2D
 var _sprite: Sprite2D        # arms, body and head, on the torso (turns with the aim)
 var _legs_sprite: Sprite2D   # the feet, on the legs (turn with the walk)
 var _idle_time: float = 0.0
+var _muzzle_light: Sprite2D   # the circle of light a shot casts around you
+var _light_time: float = 0.0
+
+## Muzzle light: radius in pixels and how long it takes to fade.
+const LIGHT_RADIUS := 30.0
+const LIGHT_TIME := 0.08
 
 const SHEET_COLUMNS := 38
 const IDLE_FRAMES := [0, 1]
@@ -111,6 +117,8 @@ func _ready() -> void:
 		_sprite = _make_sprite(torso_sheet)
 		_sprite.show_behind_parent = true   # the gun in hand is drawn on top
 		_torso.add_child(_sprite)
+	_muzzle_light = _make_light()
+	add_child(_muzzle_light)
 	_crosshair = Sprite2D.new()
 	_crosshair.texture = CROSSHAIR_TEXTURE
 	_crosshair.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
@@ -318,6 +326,7 @@ func has_gun() -> bool:
 func _fire() -> void:
 	ammo -= 1
 	_muzzle_flash = 0.05
+	_light_time = LIGHT_TIME
 	for i in maxi(weapon.pellets, 1):
 		var spread := deg_to_rad(randf_range(-weapon.spread_degrees, weapon.spread_degrees))
 		var bullet: Bullet = BULLET_SCENE.instantiate()
@@ -372,10 +381,22 @@ func equip(new_weapon: WeaponData, new_ammo: int) -> void:
 	weapon_changed.emit(weapon, ammo)
 
 
-## Called by a WeaponPickup we walk over. Only empty hands pick things up.
+## Called by a WeaponPickup we walk over. With bare fists you always take
+## it; holding something else, ALWAYS_SWAP drops that at your feet and
+## takes the new one (see PlayerSettings.pickup_mode).
 func try_pick_up(pickup: WeaponPickup) -> bool:
-	if not _alive or weapon != settings.start_weapon or not pickup.is_usable():
+	if not _alive or not pickup.is_usable():
 		return false
+	if weapon != settings.start_weapon:
+		if settings.pickup_mode != PlayerSettings.PickupMode.ALWAYS_SWAP:
+			return false
+		var dropped: WeaponPickup = PICKUP_SCENE.instantiate()
+		dropped.weapon = weapon
+		dropped.ammo = maxi(ammo, 0)
+		dropped.ignore_player = true   # don't grab it straight back
+		get_parent().add_child.call_deferred(dropped)
+		# Tossed aside about a metre (two body widths), spinning as it slides.
+		dropped.fling.call_deferred(global_position, facing.rotated(PI * 0.75), 160.0)
 	equip(pickup.weapon, pickup.ammo)
 	return true
 
@@ -391,6 +412,33 @@ func _drop_weapon(direction: Vector2) -> void:
 
 func _update_tracers(delta: float) -> void:
 	_muzzle_flash = maxf(_muzzle_flash - delta, 0.0)
+	_light_time = maxf(_light_time - delta, 0.0)
+	_muzzle_light.visible = _light_time > 0.0
+	_muzzle_light.modulate.a = _light_time / LIGHT_TIME
+
+
+## A soft warm circle, added on top of everything under it (so it lights the
+## floor and bodies rather than painting over them).
+func _make_light() -> Sprite2D:
+	var gradient := Gradient.new()
+	gradient.set_color(0, Color(1.0, 0.85, 0.55, 0.6))
+	gradient.set_color(1, Color(1.0, 0.6, 0.3, 0.0))
+	var texture := GradientTexture2D.new()
+	texture.gradient = gradient
+	texture.fill = GradientTexture2D.FILL_RADIAL
+	texture.fill_from = Vector2(0.5, 0.5)
+	texture.fill_to = Vector2(1.0, 0.5)
+	texture.width = 64
+	texture.height = 64
+	var light := Sprite2D.new()
+	light.texture = texture
+	light.scale = Vector2.ONE * LIGHT_RADIUS * 2.0 / 64.0
+	var material := CanvasItemMaterial.new()
+	material.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
+	light.material = material
+	light.z_index = 5
+	light.visible = false
+	return light
 
 
 # --------------------------------------------------------------- crosshair
@@ -551,6 +599,10 @@ func _draw_torso() -> void:
 	if _sprite:
 		if has_gun():
 			_torso.draw_rect(Rect2(5, -1.25, 6, 2.5), weapon.color)   # held out in both hands
+		elif weapon != settings.start_weapon:
+			# A blade in the right hand, pointing forward.
+			_torso.draw_rect(Rect2(2, 3, 3, 2), Color(0.35, 0.2, 0.1))   # handle
+			_torso.draw_line(Vector2(5, 4), Vector2(5 + weapon.reach * 0.35, 4), weapon.color, 2.0)
 		return
 	# Shoulders: an oval, wide across, narrow front to back.
 	_torso.draw_set_transform(Vector2.ZERO, 0.0, Vector2(0.6, 1.0))
