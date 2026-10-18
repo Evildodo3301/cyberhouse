@@ -306,22 +306,33 @@ func _initialize() -> void:
 	# 17. Shoot a target far beyond punch reach.
 	dummy = main.get_node("Dummy2")
 	player.global_position = Vector2(60, 170)
-	dummy.global_position = Vector2(150, 170)
+	dummy.global_position = Vector2(120, 170)
 	await wait_frames(3)
 	player.facing = Vector2.RIGHT
 	await wait_frames(1)
 	check(player.crosshair_on_target, "armed: crosshair reaches the far target and is red")
 	player.request_attack(Vector2.RIGHT)
-	await wait_frames(4)
+	await wait_frames(3)
+	var flying: Array = main.get_children().filter(func(n): return n is Bullet)
+	check(flying.size() == 1 and dummy.is_alive(), "the shot is a bullet you can see flying")
+	await wait_frames(12)
 	check(not dummy.is_alive(), "a pistol shot kills at range")
 	check(player.ammo == 7, "the shot used one bullet")
-	# Walls stop bullets.
+	# Range: half a screen, not the whole room.
+	var far_dummy = main.get_node("Dummy1")
+	far_dummy.global_position = Vector2(60 + 140, 230)
+	player.global_position = Vector2(60, 230)
+	await wait_frames(16)
+	player.request_attack(Vector2.RIGHT)
+	await wait_frames(30)
+	check(far_dummy.is_alive(), "bullets drop after the pistol's range")
+		# Walls stop bullets.
 	dummy = main.get_node("Dummy3")
 	dummy.global_position = Vector2(160, 96)   # behind the pillar at x 120-152
 	player.global_position = Vector2(90, 96)
 	await wait_frames(20)
 	player.request_attack(Vector2.RIGHT)
-	await wait_frames(4)
+	await wait_frames(15)
 	check(dummy.is_alive(), "walls stop bullets")
 	await wait_frames(16)   # let the gun recover
 

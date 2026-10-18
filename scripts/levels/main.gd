@@ -1,6 +1,6 @@
 extends Node2D
-## The test room: connects the pieces together and notices when every enemy
-## is dead.
+## Runs one level: connects the pieces together, notices when every enemy
+## is dead, then opens the exit (if the level has one).
 
 ## Unique name for this room. The learning system keeps its memory per room.
 @export var room_id: StringName = &"m1_test_arena"
@@ -10,8 +10,16 @@ extends Node2D
 @onready var death_screen: DeathScreen = $DeathScreen
 
 
-func _ready() -> void:
+var _started_ms: int = 0
+
+
+func _enter_tree() -> void:
+	# Before the enemies' _ready(), so they read THIS level's learned counters.
 	TacticTracker.enter_room(room_id)
+
+
+func _ready() -> void:
+	_started_ms = Time.get_ticks_msec()
 	# Hand the touch controls to the player and route button presses to it.
 	player.touch_controls = touch_controls
 	touch_controls.attack_requested.connect(player.request_attack)
@@ -35,7 +43,18 @@ func _on_enemy_died(_enemy: Node2D) -> void:
 			return
 	# Room beaten: the learning system can forget this room.
 	TacticTracker.clear_room(room_id)
-	_show_banner("ROOM CLEAR")
+	var exit_zone := get_tree().get_first_node_in_group("exit")
+	if exit_zone:
+		exit_zone.unlock()
+		exit_zone.reached.connect(_on_exit_reached)
+		_show_banner("CLEAR - GET TO THE EXIT")
+	else:
+		_show_banner("ROOM CLEAR")
+
+
+func _on_exit_reached() -> void:
+	var seconds := (Time.get_ticks_msec() - _started_ms) / 1000.0
+	death_screen.show_message("LEVEL COMPLETE\n%d:%04.1f\nTAP TO PLAY AGAIN" % [int(seconds) / 60, fmod(seconds, 60.0)], Color(0.1, 0.6, 0.3, 0.35))
 
 
 func _add_weapon_label() -> void:
