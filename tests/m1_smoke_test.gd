@@ -252,5 +252,27 @@ func _initialize() -> void:
 			break
 	check(crossed, "grunt finds a path through the door into your room")
 
+	# 14. Split body: left stick walks right while the right stick aims up.
+	# Torso faces the aim, legs face the walk.
+	await reload_room(false)
+	main = current_scene
+	player = main.get_node("Player")
+	player.global_position = Vector2(200, 200)
+	await wait_frames(2)
+	var aim_at := Vector2(screen.x * 0.75, 250)
+	touch(0, Vector2(100, 250), true)
+	drag(0, Vector2(140, 250))
+	touch(1, aim_at, true)
+	drag(1, aim_at + Vector2(0, -40))
+	await wait_frames(20)
+	check(Vector2.from_angle(player.get_node("Torso").rotation).dot(Vector2.UP) > 0.9, "torso turns to the right stick while walking")
+	check(Vector2.from_angle(player.get_node("Legs").rotation).dot(Vector2.RIGHT) > 0.95, "legs face the way you walk, not the aim")
+	touch(1, aim_at + Vector2(0, -40), false)   # lifting the thumb also swings
+	await wait_frames(15)
+	check(Vector2.from_angle(player.get_node("Torso").rotation).dot(Vector2.RIGHT) > 0.9, "no aim: torso follows the walk again")
+	touch(0, Vector2(140, 250), false)
+	await wait_frames(10)
+	check(Vector2.from_angle(player.get_node("Legs").rotation).dot(Vector2.RIGHT) > 0.95, "standing still: legs stay put")
+
 	print("\n%s (%d failure(s))" % ["ALL PASSED" if failures == 0 else "SOME FAILED", failures])
 	quit(failures)
