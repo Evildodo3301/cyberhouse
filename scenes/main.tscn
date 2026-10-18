@@ -1,4 +1,4 @@
-[gd_scene load_steps=11 format=3]
+[gd_scene load_steps=12 format=3]
 
 [ext_resource type="Script" path="res://scripts/levels/main.gd" id="1_main"]
 [ext_resource type="Script" path="res://scripts/levels/test_arena.gd" id="2_arena"]
@@ -10,6 +10,7 @@
 [ext_resource type="Script" path="res://scripts/fx/gore_layer.gd" id="8_gore"]
 [ext_resource type="PackedScene" path="res://scenes/props/swing_door.tscn" id="9_door"]
 [ext_resource type="PackedScene" path="res://scenes/enemies/grunt.tscn" id="10_grunt"]
+[ext_resource type="PackedScene" path="res://scenes/weapons/weapon_pickup.tscn" id="11_pickup"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("1_main")
@@ -28,6 +29,10 @@ position = Vector2(160, 170)
 
 [node name="Dummy3" parent="." instance=ExtResource("4_dummy")]
 position = Vector2(100, 250)
+
+[node name="PistolPickup" parent="." instance=ExtResource("11_pickup")]
+position = Vector2(60, 60)
+rotation = 0.6
 
 [node name="SwingDoor" parent="." instance=ExtResource("9_door")]
 position = Vector2(304, 120)

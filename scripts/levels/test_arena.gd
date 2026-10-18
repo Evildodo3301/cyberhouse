@@ -14,6 +14,12 @@ extends Node2D
 	Rect2(296, 0, 16, 120),
 	Rect2(296, 160, 16, 160),
 ]
+## The rooms, as Rect2(x, y, width, height). An enemy notices you as soon
+## as you stand in its room. Doorways belong to no room.
+@export var rooms: Array[Rect2] = [
+	Rect2(0, 0, 296, 320),
+	Rect2(312, 0, 168, 320),
+]
 @export var wall_thickness: float = 16.0
 @export var wall_color: Color = Color(0.55, 0.2, 1.0)    # neon purple
 @export var grid_color: Color = Color(0.2, 0.1, 0.35, 0.6)
@@ -22,6 +28,7 @@ var _walls: Array[Rect2] = []
 
 
 func _ready() -> void:
+	add_to_group("level")   # enemies ask it which room a point is in
 	var t := wall_thickness
 	_walls = [
 		Rect2(-t, -t, room_size.x + 2 * t, t),       # top
@@ -39,6 +46,14 @@ func _ready() -> void:
 	wall_drawer.z_index = 1
 	wall_drawer.draw.connect(_draw_walls.bind(wall_drawer))
 	add_child(wall_drawer)
+
+
+## Which room `point` is in (its index in `rooms`), or -1 for none.
+func room_at(point: Vector2) -> int:
+	for i in rooms.size():
+		if rooms[i].has_point(point):
+			return i
+	return -1
 
 
 ## Creates one solid wall: a StaticBody2D with a rectangle collision shape.

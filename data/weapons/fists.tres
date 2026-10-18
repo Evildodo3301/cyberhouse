@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="WeaponData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/weapons/weapon_data.gd" id="1_weapon"]
+
+[resource]
+script = ExtResource("1_weapon")
+id = &"fists"
+display_name = "FISTS"
+kind = 0
+reach = 24.0
+arc_degrees = 90.0
+windup_time = 0.08
+recovery_time = 0.25

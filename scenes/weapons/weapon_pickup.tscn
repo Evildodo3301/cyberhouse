@@ -1,0 +1,8 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/weapons/weapon_pickup.gd" id="1_pickup"]
+[ext_resource type="Resource" path="res://data/weapons/pistol.tres" id="2_pistol"]
+
+[node name="WeaponPickup" type="Node2D"]
+script = ExtResource("1_pickup")
+weapon = ExtResource("2_pistol")
