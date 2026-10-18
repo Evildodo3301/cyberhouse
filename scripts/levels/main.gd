@@ -22,6 +22,10 @@ func _ready() -> void:
 	player.died.connect(func(_weapon): death_screen.show_death())
 	# Weapon and ammo in the top-left corner.
 	_add_weapon_label()
+	# Learning enemies: "PATTERN LOGGED" after a death, and the blocked moves.
+	var pattern_hud := PatternLogged.new()
+	pattern_hud.name = "PatternLogged"
+	add_child(pattern_hud)
 	Game.enemy_died.connect(_on_enemy_died)
 
 

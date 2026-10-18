@@ -174,7 +174,7 @@ func _update_body(delta: float) -> void:
 ## Aim assist: if a target sits close to the aim line, return the direction
 ## to it. Otherwise return the aim unchanged.
 func assisted_direction(aim: Vector2) -> Vector2:
-	var assist_range := weapon.reach if _has_gun() else settings.aim_assist_range
+	var assist_range := weapon.reach if has_gun() else settings.aim_assist_range
 	var target := _find_target(aim, assist_range, settings.aim_assist_degrees)
 	if target:
 		return global_position.direction_to(target.global_position)
@@ -209,7 +209,7 @@ func request_attack(direction: Vector2) -> void:
 	if not _alive or _attack_state != AttackState.READY:
 		return   # still swinging or recovering
 	if direction == Vector2.ZERO:
-		var tap_range := weapon.reach if _has_gun() else settings.tap_assist_radius
+		var tap_range := weapon.reach if has_gun() else settings.tap_assist_radius
 		var target := _find_target(facing, tap_range, settings.tap_assist_degrees)
 		direction = global_position.direction_to(target.global_position) if target else facing
 	else:
@@ -218,7 +218,7 @@ func request_attack(direction: Vector2) -> void:
 	facing = direction
 	_attack_state = AttackState.WINDUP
 	_attack_timer = weapon.windup_time
-	_last_attack = "gun" if _has_gun() else "melee"
+	_last_attack = "gun" if has_gun() else "melee"
 	_last_attack_ms = Time.get_ticks_msec()
 
 
@@ -230,7 +230,7 @@ func _update_attack(delta: float) -> void:
 	if _attack_timer > 0.0:
 		return
 	if _attack_state == AttackState.WINDUP:
-		if _has_gun():
+		if has_gun():
 			_fire()
 		else:
 			_strike()
@@ -268,7 +268,7 @@ func _targets_in_swing(direction: Vector2) -> Array[Node2D]:
 
 # --------------------------------------------------------------------- guns
 
-func _has_gun() -> bool:
+func has_gun() -> bool:
 	return weapon != null and weapon.kind == WeaponData.Kind.GUN
 
 
@@ -296,7 +296,7 @@ func _fire() -> void:
 ## Where a bullet fired in `direction` would stop, and who it would hit.
 ## Returns {"end": Vector2, "target": Node2D or null}.
 func trace_shot(direction: Vector2) -> Dictionary:
-	var reach := weapon.reach if _has_gun() else 0.0
+	var reach := weapon.reach if has_gun() else 0.0
 	var end := global_position + direction * reach
 	var query := PhysicsRayQueryParameters2D.create(global_position, end, 1 | 16)
 	var wall := get_world_2d().direct_space_state.intersect_ray(query)
@@ -327,7 +327,7 @@ func trace_shot(direction: Vector2) -> Dictionary:
 func equip(new_weapon: WeaponData, new_ammo: int) -> void:
 	weapon = new_weapon
 	ammo = new_weapon.ammo if new_ammo < 0 else new_ammo
-	if not _has_gun():
+	if not has_gun():
 		ammo = -1
 	weapon_changed.emit(weapon, ammo)
 
@@ -365,7 +365,7 @@ func _update_crosshair() -> void:
 		aim = facing
 	var direction := assisted_direction(aim)
 	var point: Vector2
-	if _has_gun():
+	if has_gun():
 		var shot := trace_shot(direction)
 		point = shot.end
 		crosshair_on_target = shot.target != null
@@ -445,7 +445,7 @@ func _report_death(attacker: Node2D, weapon: String) -> void:
 		killer_type = "enemy_gun"
 	var door_id := ""
 	for door in get_tree().get_nodes_in_group("doors"):
-		if global_position.distance_to(door.global_position) <= door.length:
+		if global_position.distance_to(door.center()) <= door.length * 0.5 + 8.0:
 			door_id = door.door_id
 	var noise_pulling := get_tree().get_nodes_in_group("enemies").any(
 		func(e): return e.is_alive() and e.chasing_noise)
@@ -477,7 +477,7 @@ func _draw() -> void:
 	# Shots: a bright line that fades in a few frames.
 	for tracer in _tracers:
 		draw_line(to_local(tracer.from), to_local(tracer.to), Color(1, 0.95, 0.6, tracer.time / 0.06), 1.5)
-	if _has_gun():
+	if has_gun():
 		return   # the swing arcs below are for melee only
 
 	# Wind-up: a thin outline of where the swing is about to land.
@@ -511,5 +511,5 @@ func _draw_torso() -> void:
 	_torso.draw_set_transform(Vector2.ZERO)
 	_torso.draw_circle(Vector2(0.5, 0), 3.5, body_color.lightened(0.25))   # head
 	_torso.draw_line(Vector2(2, 0), Vector2(10, 0), accent_color, 3.0)   # visor / arm
-	if _has_gun():
+	if has_gun():
 		_torso.draw_rect(Rect2(8, -1.5, 7, 3), weapon.color)   # the gun in hand

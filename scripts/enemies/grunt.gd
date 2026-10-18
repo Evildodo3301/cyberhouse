@@ -10,8 +10,14 @@ extends CharacterBody2D
 ## Plus KNOCKED_DOWN (a door hit it) and DEAD. A bomb going off sends it to
 ## SEARCH toward the noise. One hit kills it; its hit kills you.
 ##
-## M3 hooks already here: settings in a Resource, last known position,
-## hearing, door awareness, a death report and a "tell" colour for the eyes.
+## Learning (M3): on each retry it reads the tactics the room has blocked
+## (TacticTracker.get_active_counters()) and switches on a counter for each.
+## Adapted grunts have glowing eyes and call out the counter they use:
+##   DOOR_AMBUSH -> "HOLD":    won't walk into a doorway you're waiting at.
+##   RUSH        -> "BACK":    backs away when you run at it (same speed as its chase).
+##   LONG_RANGE  -> "COVER":   hides behind walls while you hold a gun far away.
+##   BOMB        -> "SCATTER": runs from a landed bomb and keeps apart from others.
+## Counters never change its speed, reaction time or reach.
 
 enum State { PATROL, ALERT, CHASE, ATTACK, SEARCH, KNOCKED_DOWN, DEAD }
 
@@ -45,6 +51,16 @@ var _attack_direction: Vector2 = Vector2.RIGHT
 var _struck: bool = false
 var _arrived: bool = false
 var _look_time: float = 0.0
+# Learning counters.
+var _bark_text: String = ""
+var _bark_time: float = 0.0
+var _cover_point: Vector2
+var _has_cover: bool = false
+var _cover_timer: float = 0.0
+var _flee_from: Vector2
+var _flee_time: float = 0.0
+
+const SCATTER_TIME := 1.2   # a little longer than the bomb fuse
 
 @onready var agent: NavigationAgent2D = $NavigationAgent2D
 
@@ -60,6 +76,14 @@ func _ready() -> void:
 	last_known_position = global_position
 	Game.noise_made.connect(_on_noise_made)
 	active_counters = TacticTracker.get_active_counters()
+	if not active_counters.is_empty():
+		tell_color = TacticTracker.settings.adapted_eye_color
+	Game.bomb_landed.connect(_on_bomb_landed)
+
+
+## True if the room has blocked `tactic` and this grunt should counter it.
+func counters(tactic: StringName) -> bool:
+	return active_counters.has(tactic)
 
 
 func is_alive() -> bool:
@@ -78,6 +102,13 @@ func _physics_process(delta: float) -> void:
 		chasing_noise = false
 	else:
 		_unseen_time += delta
+	_bark_time = maxf(_bark_time - delta, 0.0)
+
+	if _flee_time > 0.0 and state != State.KNOCKED_DOWN:
+		_scatter(delta)
+		move_and_slide()
+		queue_redraw()
+		return
 
 	match state:
 		State.PATROL:
@@ -97,12 +128,13 @@ func _physics_process(delta: float) -> void:
 				_enter(State.ATTACK)
 			elif _unseen_time >= settings.lose_sight_time:
 				_enter(State.SEARCH)
-			else:
+			elif not _counter_move(player, sees, delta):
 				_move_to(last_known_position, settings.chase_speed)
 		State.ATTACK:
 			_attack(player)
 		State.SEARCH:
-			_search()
+			if not _hold_at_door(player):
+				_search()
 			if sees:
 				_enter(State.CHASE)   # re-sighting: no reaction delay
 		State.KNOCKED_DOWN:
@@ -231,9 +263,27 @@ func _move_to(target: Vector2, speed: float) -> void:
 	if agent.is_navigation_finished() or next.distance_to(global_position) < 0.5:
 		next = target   # no path yet (first frames): head straight there
 	var direction := global_position.direction_to(next)
+	if counters(TacticTracker.BOMB) and state == State.CHASE:
+		direction = _spread_out(direction)
 	velocity = direction * speed
 	if direction != Vector2.ZERO:
 		facing = direction
+
+
+## BOMB counter: keeps a gap from other grunts so one bomb can't get them all.
+## The result is still length 1, so it never makes the grunt faster.
+func _spread_out(direction: Vector2) -> Vector2:
+	var push := Vector2.ZERO
+	for other in get_tree().get_nodes_in_group("enemies"):
+		if other == self or not other.is_alive():
+			continue
+		var gap: Vector2 = global_position - other.global_position
+		if gap.length() < 40.0 and gap.length() > 0.1:
+			push += gap.normalized() * (1.0 - gap.length() / 40.0)
+	if push == Vector2.ZERO:
+		return direction
+	_bark("SCATTER")
+	return (direction + push).normalized()
 
 
 # ------------------------------------------------------------- getting hit
@@ -292,9 +342,131 @@ func _report_death(attacker: Node2D, weapon: String, state_name: String) -> void
 
 func _near_door() -> bool:
 	for door in get_tree().get_nodes_in_group("doors"):
-		if global_position.distance_to(door.global_position) <= door.length + 8.0:
+		if global_position.distance_to(door.center()) <= door.length * 0.5 + 12.0:
 			return true
 	return false
+
+
+# ---------------------------------------------------------------- counters
+
+## Runs the counter for a blocked tactic, if one applies right now.
+## Returns true if it decided how to move this frame.
+func _counter_move(player: Node2D, sees: bool, delta: float) -> bool:
+	if _hold_at_door(player):
+		return true
+	if counters(TacticTracker.RUSH) and sees and _back_off(player):
+		return true
+	if counters(TacticTracker.LONG_RANGE) and _take_cover(player, delta):
+		return true
+	return false
+
+
+func _bark(text: String) -> void:
+	_bark_text = text
+	_bark_time = 0.8
+
+
+## DOOR_AMBUSH: you are waiting at a doorway on the other side, so it stops
+## short of the door and waits, facing it. Beat it: go in another way or go to it.
+func _hold_at_door(player: Node2D) -> bool:
+	if player == null or not counters(TacticTracker.DOOR_AMBUSH):
+		return false
+	var level := get_tree().get_first_node_in_group("level")
+	for door in get_tree().get_nodes_in_group("doors"):
+		var door_center: Vector2 = door.center()
+		if player.global_position.distance_to(door_center) > 36.0:
+			continue
+		if global_position.distance_to(door_center) > 64.0:
+			continue
+		if level and level.room_at(global_position) == level.room_at(player.global_position):
+			continue   # you're already on its side: no ambush to avoid
+		velocity = Vector2.ZERO
+		facing = global_position.direction_to(door_center)
+		_bark("HOLD")
+		return true
+	return false
+
+
+## RUSH: when you run straight at it, it backs away, still facing you.
+## It only moves at its normal chase speed. Beat it: gun, bomb, or pin it to a wall.
+func _back_off(player: Node2D) -> bool:
+	var away := global_position - player.global_position
+	if away.length() > 64.0:
+		return false
+	var closing: float = player.velocity.dot(away.normalized())
+	if closing < 40.0:
+		return false
+	velocity = away.normalized() * settings.chase_speed
+	facing = -away.normalized()
+	_bark("BACK")
+	return true
+
+
+## LONG_RANGE: while you hold a gun and stand far away, it hides behind the
+## nearest wall and waits. Beat it: get close, or drop the gun and use fists.
+func _take_cover(player: Node2D, delta: float) -> bool:
+	if player == null or not player.has_gun():
+		return false
+	if global_position.distance_to(player.global_position) <= 64.0:
+		return false   # you're close now: charge
+	_cover_timer -= delta
+	if _cover_timer <= 0.0:
+		_cover_timer = 0.5
+		_has_cover = _find_cover(player.global_position)
+	if not _has_cover:
+		return false
+	if global_position.distance_to(_cover_point) > 4.0:
+		_move_to(_cover_point, settings.chase_speed)
+	else:
+		velocity = Vector2.ZERO
+		facing = global_position.direction_to(player.global_position)
+	_bark("COVER")
+	return true
+
+
+## Looks for a nearby spot it can walk to in a straight line that you can't see.
+func _find_cover(from: Vector2) -> bool:
+	var space := get_world_2d().direct_space_state
+	for radius in [20.0, 36.0, 52.0, 68.0, 84.0, 100.0]:
+		var best_distance := INF
+		for i in 16:
+			var spot: Vector2 = global_position + Vector2.from_angle(TAU * i / 16.0) * radius
+			var point := PhysicsPointQueryParameters2D.new()
+			point.position = spot
+			point.collision_mask = 1 | 16
+			if not space.intersect_point(point).is_empty():
+				continue   # inside a wall
+			if not space.intersect_ray(PhysicsRayQueryParameters2D.create(global_position, spot, 1 | 16)).is_empty():
+				continue   # can't walk there in a straight line
+			if space.intersect_ray(PhysicsRayQueryParameters2D.create(from, spot, 1 | 16)).is_empty():
+				continue   # you could see it there
+			var distance := spot.distance_to(from)
+			if distance < best_distance:   # the hidden spot closest to you
+				best_distance = distance
+				_cover_point = spot
+		if best_distance < INF:
+			return true
+	return false
+
+
+## BOMB: a bomb landed close by, so it runs straight away from it.
+func _on_bomb_landed(at: Vector2, blast_radius: float) -> void:
+	if state == State.DEAD or not counters(TacticTracker.BOMB):
+		return
+	if global_position.distance_to(at) > blast_radius + 24.0:
+		return
+	_flee_from = at
+	_flee_time = SCATTER_TIME
+
+
+func _scatter(delta: float) -> void:
+	_flee_time -= delta
+	var away := global_position - _flee_from
+	velocity = (away.normalized() if away != Vector2.ZERO else facing) * settings.chase_speed
+	facing = -velocity.normalized()   # keeps an eye on the bomb
+	_bark("SCATTER")
+	if _flee_time <= 0.0:
+		_enter(State.CHASE if _get_player() else State.SEARCH)
 
 
 # ---------------------------------------------------------------- drawing
@@ -325,7 +497,15 @@ func _draw() -> void:
 		var hand := facing.orthogonal() * 5.0 + facing * 6.0
 		draw_line(hand, hand + facing * 6.0, carried_weapon.color, 2.5)
 	if tell_color.a > 0.0:
-		draw_circle(facing * 4.0, 2.0, tell_color)   # M3 adaptation tell
+		# Glowing eyes: this grunt has learned your moves.
+		var eyes := facing * 4.5
+		draw_circle(eyes, 5.0, Color(tell_color, 0.25))
+		draw_circle(eyes + facing.orthogonal() * 2.0, 1.4, tell_color)
+		draw_circle(eyes - facing.orthogonal() * 2.0, 1.4, tell_color)
+	if _bark_time > 0.0:
+		# The counter it is using right now.
+		var bark_color := tell_color if tell_color.a > 0.0 else Color(1, 0.9, 0.2)
+		draw_string(ThemeDB.fallback_font, Vector2(-16, -24), _bark_text, HORIZONTAL_ALIGNMENT_CENTER, 32, 8, Color(bark_color, minf(_bark_time * 3.0, 1.0)))
 
 	if state == State.ALERT:
 		# The "!" warning.

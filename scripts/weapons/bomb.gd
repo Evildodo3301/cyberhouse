@@ -46,6 +46,7 @@ func _physics_process(delta: float) -> void:
 				_state = State.FUSE
 				_timer = 0.0
 				_height = 0.0
+				Game.bomb_landed.emit(global_position, settings.bomb_blast_radius)
 		State.FUSE:
 			if _timer >= settings.bomb_fuse_time:
 				_explode()
