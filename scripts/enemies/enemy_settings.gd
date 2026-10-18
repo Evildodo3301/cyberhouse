@@ -1,0 +1,53 @@
+class_name EnemySettings
+extends Resource
+## Every number that controls how an enemy behaves, kept in ONE place
+## (open res://data/grunt_settings.tres to tweak them in the Inspector).
+##
+## The learning system (M3) gives enemies counters by changing values like
+## these, so they must never be hard-coded inside the enemy script.
+## Distances are in pixels (16 px = one character width).
+
+@export_group("Movement")
+## Walking speed on patrol.
+@export var patrol_speed: float = 45.0
+## Running speed when chasing. The player runs at 96.
+@export var chase_speed: float = 100.0
+## Pause at each patrol point, in seconds.
+@export var patrol_pause: float = 0.8
+
+@export_group("Senses")
+## Seconds between seeing you and attacking. The main fairness knob.
+## Creative Director asked for faster enemies: 0.2 (design doc default 0.25).
+@export var reaction_time: float = 0.2
+## Width of the vision cone, in degrees.
+@export var vision_degrees: float = 90.0
+## How far it can see (8 character widths).
+@export var vision_range: float = 128.0
+## It also notices you this close, even behind its back.
+@export var close_awareness_range: float = 16.0
+## How far a noise of loudness 1.0 carries.
+@export var hearing_range: float = 600.0
+## After losing sight of you for this long, it starts searching.
+@export var lose_sight_time: float = 0.6
+## How long it looks around at your last known position before giving up.
+@export var search_look_time: float = 2.0
+
+@export_group("Attack")
+## Starts a swing when you're this close.
+@export var attack_range: float = 18.0
+## Telegraph before its swing lands (a red arc shows it).
+@export var attack_windup: float = 0.18
+## Pause after a swing before it can act again.
+@export var attack_recovery: float = 0.45
+## Width of its swing, in degrees.
+@export var attack_arc_degrees: float = 100.0
+
+@export_group("Doors")
+## Seconds it stays down after a door slams into it.
+@export var knockdown_time: float = 1.5
+## Pause before walking through a doorway (0 in M2; an M3 counter can raise it).
+@export var door_pause_time: float = 0.0
+
+@export_group("Debug")
+## Draw the vision cone (design: on for M2 testing, decide later).
+@export var show_vision_cone: bool = true

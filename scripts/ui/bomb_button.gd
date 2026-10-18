@@ -6,8 +6,12 @@ extends VirtualJoystick
 ## It is a VirtualJoystick that stays in one fixed spot, so it reuses all the
 ## finger-tracking code. The bomb count is drawn on the button.
 
-## Button center, measured from the bottom-right corner of the screen.
+## Button center, measured from the bottom-right corner of the screen
+## (game pixels; recalculated from `offset_cm` on each screen).
 @export var offset_from_corner: Vector2 = Vector2(120, 190)
+## The same offset in real centimetres, so the button stays within thumb
+## reach on a big tablet as well as a phone. (0, 0) = use the pixels above.
+@export var offset_cm: Vector2 = Vector2(2.4, 3.6)
 ## Text color for the counter.
 @export var count_color: Color = Color(1, 1, 1)
 
@@ -16,6 +20,17 @@ var bombs_left: int = 0:
 	set(new_value):
 		bombs_left = new_value
 		queue_redraw()
+
+
+func _update_sizes() -> void:
+	var vp := get_viewport()
+	if radius_cm > 0.0:
+		radius = ScreenUnits.cm(vp, radius_cm, 22.0, 40.0)
+	if offset_cm != Vector2.ZERO:
+		offset_from_corner = Vector2(
+			ScreenUnits.cm(vp, offset_cm.x, 70.0, 140.0),
+			ScreenUnits.cm(vp, offset_cm.y, 110.0, 200.0))
+	queue_redraw()
 
 
 func get_button_center() -> Vector2:

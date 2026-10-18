@@ -17,6 +17,9 @@ enum StickSide { LEFT, RIGHT }
 @export var side: StickSide = StickSide.LEFT
 ## How far (in screen pixels) the knob can move from the center.
 @export var radius: float = 40.0
+## Real-world radius in cm (0 = use `radius` as is). Keeps the stick the same
+## size under the thumb on phones and tablets.
+@export var radius_cm: float = 1.1
 ## Small movements under this fraction of the radius are ignored.
 @export var dead_zone: float = 0.2
 ## A touch shorter than this (seconds) that stays in the dead zone is a tap.
@@ -40,6 +43,18 @@ var _center: Vector2 = Vector2.ZERO
 var _knob: Vector2 = Vector2.ZERO
 var _touch_start_ms: int = 0
 var _left_dead_zone: bool = false
+
+
+func _ready() -> void:
+	_update_sizes()
+	get_viewport().size_changed.connect(_update_sizes)
+
+
+## Turns the real-world sizes (cm) into game pixels for this screen.
+func _update_sizes() -> void:
+	if radius_cm > 0.0:
+		radius = ScreenUnits.cm(get_viewport(), radius_cm, 32.0, 56.0)
+	queue_redraw()
 
 
 func _input(event: InputEvent) -> void:

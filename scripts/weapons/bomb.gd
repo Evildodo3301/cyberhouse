@@ -28,7 +28,7 @@ func throw(from: Vector2, direction: Vector2, new_settings: PlayerSettings, new_
 ## Where the bomb lands: full throw distance, or just before the first wall.
 func _landing_point(from: Vector2, direction: Vector2) -> Vector2:
 	var end := from + direction * settings.bomb_throw_distance
-	var query := PhysicsRayQueryParameters2D.create(from, end, 1)   # 1 = walls layer
+	var query := PhysicsRayQueryParameters2D.create(from, end, 1 | 16)   # walls and doors
 	var hit := get_world_2d().direct_space_state.intersect_ray(query)
 	if hit:
 		return hit.position - direction * 4.0
