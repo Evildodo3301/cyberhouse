@@ -55,13 +55,19 @@ func _ready() -> void:
 
 ## Paints a kill: a body lying where it fell, a pool under it and blood
 ## sprayed in the hit direction. A bomb sprays in every direction.
-func add_kill(at: Vector2, direction: Vector2, body_color: Color, weapon: String) -> void:
+## `corpse` (optional) paints a sprite instead of the placeholder shapes:
+## {"texture": Texture2D, "region": Rect2, "burst_region": Rect2, "scale": float}.
+## The sprite is drawn head-first along `direction`. "burst_region" (a burst
+## head) is used for gun and bomb kills when blood is set to FULL.
+func add_kill(at: Vector2, direction: Vector2, body_color: Color, weapon: String, corpse: Dictionary = {}) -> void:
 	kill_count += 1
 	_pending.append({
 		"at": to_local(at),
 		"direction": direction.normalized() if direction != Vector2.ZERO else Vector2.RIGHT,
 		"body_color": body_color,
 		"explosive": weapon == "bomb",
+		"burst": weapon != "melee",
+		"corpse": corpse,
 	})
 	_painter.queue_redraw()
 	_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
@@ -86,7 +92,11 @@ func _paint_pending() -> void:
 				pass
 		# Torn-apart bodies only at FULL; otherwise a bomb leaves an intact body.
 		var torn: bool = stamp.explosive and Game.blood_level == Game.BloodLevel.FULL
-		_paint_body(stamp.at, stamp.direction, stamp.body_color, torn)
+		if stamp.corpse.is_empty():
+			_paint_body(stamp.at, stamp.direction, stamp.body_color, torn)
+		else:
+			var gory: bool = stamp.burst and Game.blood_level == Game.BloodLevel.FULL
+			_paint_corpse(stamp.at, stamp.direction, stamp.corpse, gory)
 
 
 func _paint_blood(at: Vector2, direction: Vector2, explosive: bool) -> void:
@@ -129,6 +139,15 @@ func _paint_body(at: Vector2, direction: Vector2, color: Color, explosive: bool)
 		_painter.draw_circle(Vector2(8, 0), 3.5, lying)             # head, thrown back
 		_painter.draw_line(Vector2(-2, -3), Vector2(-9, -6), lying, 2.0)  # arm
 		_painter.draw_line(Vector2(-2, 3), Vector2(-10, 4), lying, 2.0)   # leg
+	_painter.draw_set_transform(Vector2.ZERO, 0.0)
+
+
+## A corpse sprite. Sheets draw bodies head-up, so turn "up" to the hit direction.
+func _paint_corpse(at: Vector2, direction: Vector2, corpse: Dictionary, gory: bool) -> void:
+	var region: Rect2 = corpse.burst_region if gory else corpse.region
+	var size: Vector2 = region.size
+	_painter.draw_set_transform(at, direction.angle() + PI * 0.5, Vector2.ONE * corpse.scale)
+	_painter.draw_texture_rect_region(corpse.texture, Rect2(-size * 0.5, size), region)
 	_painter.draw_set_transform(Vector2.ZERO, 0.0)
 
 

@@ -27,7 +27,17 @@ enum State { PATROL, ALERT, CHASE, ATTACK, SEARCH, KNOCKED_DOWN, DEAD }
 @export var patrol_points: Array[Vector2] = []
 ## Which way a guard faces at the start (degrees, 0 = right, 90 = down).
 @export var start_facing_degrees: float = 0.0
-@export var body_color: Color = Color(0.45, 0.85, 0.35)   # toxic green
+@export var body_color: Color = Color(0.45, 0.85, 0.35)   # toxic green (placeholder only)
+
+@export_group("Look")
+## Sprite sheet: 64 x 64 cells, 12 per row, drawn facing up. Row 1 = walk
+## cycle, row 2 = corpses (odd columns have a burst head). Empty = placeholder shapes.
+@export var sheet: Texture2D
+@export var sheet_rows: int = 3
+## Sheet pixels to room pixels (the walking body is ~23 px wide in the sheet).
+@export var sprite_scale: float = 0.6
+## Room pixels walked per walk-cycle frame.
+@export var stride_per_frame: float = 4.0
 ## The gun it drops when it dies (it still fights with fists for now).
 ## Empty = drops nothing.
 @export var carried_weapon: WeaponData
@@ -61,6 +71,15 @@ var _flee_from: Vector2
 var _flee_time: float = 0.0
 
 const SCATTER_TIME := 1.2   # a little longer than the bomb fuse
+const SHEET_COLUMNS := 12
+const PUNCH_FRAME := 3          # walk frame with one arm thrown forward
+const KNOCKED_FRAME := SHEET_COLUMNS   # first corpse pose, no blood
+const CLEAN_CORPSES := [0, 2, 4, 6, 8, 9, 10, 11]
+const OUTLINE := preload("res://shaders/outline.gdshader")
+
+var _sprite: Sprite2D
+var _overlay: Node2D   # eyes, "!", barks and telegraphs, drawn above the sprite
+var _walked: float = 0.0
 
 @onready var agent: NavigationAgent2D = $NavigationAgent2D
 
@@ -79,6 +98,21 @@ func _ready() -> void:
 	if not active_counters.is_empty():
 		tell_color = TacticTracker.settings.adapted_eye_color
 	Game.bomb_landed.connect(_on_bomb_landed)
+	_overlay = Node2D.new()
+	_overlay.z_index = 1
+	_overlay.draw.connect(_draw_overlay)
+	if sheet:
+		_sprite = Sprite2D.new()
+		_sprite.texture = sheet
+		_sprite.hframes = SHEET_COLUMNS
+		_sprite.vframes = sheet_rows
+		_sprite.scale = Vector2.ONE * sprite_scale
+		_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		var material := ShaderMaterial.new()
+		material.shader = OUTLINE
+		_sprite.material = material
+		add_child(_sprite)
+	add_child(_overlay)
 
 
 ## True if the room has blocked `tactic` and this grunt should counter it.
@@ -107,7 +141,9 @@ func _physics_process(delta: float) -> void:
 	if _flee_time > 0.0 and state != State.KNOCKED_DOWN:
 		_scatter(delta)
 		move_and_slide()
+		_update_sprite(delta)
 		queue_redraw()
+		_overlay.queue_redraw()
 		return
 
 	match state:
@@ -142,7 +178,9 @@ func _physics_process(delta: float) -> void:
 			if _state_time >= settings.knockdown_time:
 				_enter(State.CHASE if sees else State.SEARCH)
 	move_and_slide()
+	_update_sprite(delta)
 	queue_redraw()
+	_overlay.queue_redraw()
 
 
 func _enter(new_state: State) -> void:
@@ -299,7 +337,7 @@ func take_hit(attacker: Node2D, direction: Vector2, weapon: String) -> void:
 	_report_death(attacker, weapon, state_name)
 	var gore := get_tree().get_first_node_in_group("gore")
 	if gore:
-		gore.add_kill(global_position + direction * 8.0, direction, body_color, weapon)
+		gore.add_kill(global_position + direction * 8.0, direction, body_color, weapon, _corpse())
 	visible = false
 	_drop_weapon(direction)
 	Game.enemy_died.emit(self)
@@ -469,6 +507,40 @@ func _scatter(delta: float) -> void:
 		_enter(State.CHASE if _get_player() else State.SEARCH)
 
 
+# ------------------------------------------------------------------ sprite
+
+## Picks the sheet frame: walk cycle while moving, punch pose in the wind-up,
+## lying pose when knocked down. The sheet faces up, so turn by +90 degrees.
+func _update_sprite(delta: float) -> void:
+	if _sprite == null:
+		return
+	if state == State.KNOCKED_DOWN:
+		_sprite.frame = KNOCKED_FRAME
+		return
+	_sprite.rotation = facing.angle() + PI * 0.5
+	if state == State.ATTACK and not _struck:
+		_sprite.frame = PUNCH_FRAME
+	elif velocity.length() > 5.0:
+		_walked += velocity.length() * delta
+		_sprite.frame = int(_walked / stride_per_frame) % SHEET_COLUMNS
+	else:
+		_sprite.frame = 0
+
+
+## The corpse the gore layer paints when it dies (empty = placeholder shapes).
+func _corpse() -> Dictionary:
+	if sheet == null:
+		return {}
+	var clean: int = CLEAN_CORPSES.pick_random()
+	var burst: int = [1, 3, 5, 7].pick_random()
+	return {
+		"texture": sheet,
+		"region": Rect2(clean * 64, 64, 64, 64),
+		"burst_region": Rect2(burst * 64, 64, 64, 64),
+		"scale": sprite_scale,
+	}
+
+
 # ---------------------------------------------------------------- drawing
 # Placeholder shapes until the Art Director's sprites arrive (M5).
 
@@ -481,7 +553,8 @@ func _draw() -> void:
 			cone.append(Vector2.from_angle(angle - half + 2.0 * half * i / 8.0) * settings.vision_range)
 		var alert := state in [State.ALERT, State.CHASE, State.ATTACK]
 		draw_colored_polygon(cone, Color(1, 0.2, 0.2, 0.07) if alert else Color(1, 1, 1, 0.04))
-
+	if _sprite:
+		return   # the sprite shows the body
 	if state == State.KNOCKED_DOWN:
 		# Lying on the floor.
 		draw_set_transform(Vector2.ZERO, angle)
@@ -489,32 +562,37 @@ func _draw() -> void:
 		draw_circle(Vector2(8, 0), 3.5, body_color.darkened(0.3))
 		draw_set_transform(Vector2.ZERO, 0.0)
 		return
-
 	draw_circle(Vector2.ZERO, 7.0, body_color)
 	draw_line(Vector2.ZERO, facing * 9.0, Color(0.1, 0.1, 0.1), 3.0)
+
+
+## Everything drawn on top of the body: gun, eyes, warnings and barks.
+func _draw_overlay() -> void:
+	var o := _overlay
+	if state == State.KNOCKED_DOWN:
+		return
 	if carried_weapon:
 		# The gun it will drop, held at its side.
 		var hand := facing.orthogonal() * 5.0 + facing * 6.0
-		draw_line(hand, hand + facing * 6.0, carried_weapon.color, 2.5)
+		o.draw_line(hand, hand + facing * 6.0, carried_weapon.color, 2.5)
 	if tell_color.a > 0.0:
 		# Glowing eyes: this grunt has learned your moves.
-		var eyes := facing * 4.5
-		draw_circle(eyes, 5.0, Color(tell_color, 0.25))
-		draw_circle(eyes + facing.orthogonal() * 2.0, 1.4, tell_color)
-		draw_circle(eyes - facing.orthogonal() * 2.0, 1.4, tell_color)
+		var eyes := facing * 3.0
+		o.draw_circle(eyes, 3.5, Color(tell_color, 0.25))
+		o.draw_circle(eyes + facing.orthogonal() * 2.0, 1.4, tell_color)
+		o.draw_circle(eyes - facing.orthogonal() * 2.0, 1.4, tell_color)
 	if _bark_time > 0.0:
 		# The counter it is using right now.
 		var bark_color := tell_color if tell_color.a > 0.0 else Color(1, 0.9, 0.2)
-		draw_string(ThemeDB.fallback_font, Vector2(-16, -24), _bark_text, HORIZONTAL_ALIGNMENT_CENTER, 32, 8, Color(bark_color, minf(_bark_time * 3.0, 1.0)))
-
+		o.draw_string(ThemeDB.fallback_font, Vector2(-16, -24), _bark_text, HORIZONTAL_ALIGNMENT_CENTER, 32, 8, Color(bark_color, minf(_bark_time * 3.0, 1.0)))
 	if state == State.ALERT:
 		# The "!" warning.
-		draw_line(Vector2(0, -20), Vector2(0, -13), Color(1, 0.9, 0.2), 2.5)
-		draw_circle(Vector2(0, -10), 1.3, Color(1, 0.9, 0.2))
+		o.draw_line(Vector2(0, -20), Vector2(0, -13), Color(1, 0.9, 0.2), 2.5)
+		o.draw_circle(Vector2(0, -10), 1.3, Color(1, 0.9, 0.2))
 	elif state == State.ATTACK and not _struck:
 		# Wind-up telegraph: a red arc where the swing will land.
 		var half_arc := deg_to_rad(settings.attack_arc_degrees * 0.5)
 		var a := _attack_direction.angle()
-		draw_arc(Vector2.ZERO, settings.attack_range, a - half_arc, a + half_arc, 12, Color(1, 0.15, 0.1, 0.9), 2.0)
+		o.draw_arc(Vector2.ZERO, settings.attack_range, a - half_arc, a + half_arc, 12, Color(1, 0.15, 0.1, 0.9), 2.0)
 	elif state == State.SEARCH:
-		draw_string(ThemeDB.fallback_font, Vector2(-3, -10), "?", HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(1, 0.9, 0.2))
+		o.draw_string(ThemeDB.fallback_font, Vector2(-3, -10), "?", HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(1, 0.9, 0.2))

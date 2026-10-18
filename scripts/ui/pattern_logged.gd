@@ -17,10 +17,7 @@ var _time_left: float = 0.0
 func _ready() -> void:
 	layer = 6
 	_message = _make_label(18, glitch_color)
-	_message.set_anchors_preset(Control.PRESET_CENTER_TOP)
 	_message.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_message.position = Vector2(-160, 90)
-	_message.size = Vector2(320, 60)
 	_blocked = _make_label(10, Color(glitch_color, 0.8))
 	_blocked.position = Vector2(44, 28)   # under the weapon name
 	refresh()
@@ -46,6 +43,13 @@ func refresh() -> void:
 	_message.text = "\n".join(new_blocks.map(func(t): return "PATTERN LOGGED: " + pretty(t)))
 	_message.visible = true
 	_time_left = show_time
+	_place_message(Vector2.ZERO)
+
+
+## Centred across the screen, a little below the top, nudged by `jitter`.
+func _place_message(jitter: Vector2) -> void:
+	_message.size = Vector2(get_viewport().get_visible_rect().size.x, 60)
+	_message.position = Vector2(0, 90) + jitter
 
 
 static func pretty(tactic: StringName) -> String:
@@ -60,6 +64,6 @@ func _process(delta: float) -> void:
 		_message.visible = false
 		return
 	# Glitch: jitter, colour split and the odd dropped frame.
-	_message.position = Vector2(-160, 90) + Vector2(randf_range(-3, 3), randf_range(-1.5, 1.5))
+	_place_message(Vector2(randf_range(-3, 3), randf_range(-1.5, 1.5)))
 	_message.modulate = Color(1, 1, 1, 0.0 if randf() < 0.12 else 1.0)
 	_message.add_theme_color_override("font_color", glitch_color if randf() < 0.8 else Color(0.16, 0.94, 1.0))
