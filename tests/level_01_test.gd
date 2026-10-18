@@ -51,6 +51,50 @@ func _initialize() -> void:
 	await wait_frames(3)
 	check(civilian.state == 1, "entering a room alerts its enemy")
 
+	# Looks: the player wears the pink sheet, every enemy the cop sheet.
+	check(player._sprite != null and player._sprite.texture.resource_path.ends_with("player.png"), "the player has the pink character sprite")
+	check(enemies.all(func(e): return e.sheet.resource_path.ends_with("cop.png")), "every enemy looks like a cop")
+	var roamers := enemies.filter(func(e): return not e.stays_in_room).size()
+	print("      roamers: ", enemies.filter(func(e): return not e.stays_in_room).map(func(e): return e.name))
+	check(roamers >= 1 and roamers <= 3, "only a few enemies may leave their room (%d of 9)" % roamers)
+
+	# Push the start room's door open: the two cops behind it react at once.
+	var door_spot := Vector2(15 * 16 - 10, 17 * 16 + 8)
+	var behind_door := enemies.filter(func(e): return map.room_at(e.global_position) == map.room_at(Vector2(20 * 16, 17 * 16)))
+	check(behind_door.size() == 2 and behind_door.all(func(e): return e.state == 0), "the cops behind the door start calm")
+	player.global_position = door_spot
+	await wait_frames(4)
+	check(behind_door.all(func(e): return e.state in [1, 2]), "opening the door alerts the room behind it")
+	var far_room := enemies.filter(func(e): return map.room_at(e.global_position) == map.room_at(Vector2(40 * 16, 3 * 16)))
+	check(far_room.all(func(e): return e.state == 0), "rooms away from the door stay calm")
+
+	# Shoot: a tiny triple kick, and the void flashes neon then fades.
+	player.global_position = Vector2(3 * 16 + 8, 20 * 16 + 8)
+	player.equip(load("res://data/weapons/pistol.tres"), 8)
+	var camera = level.get_node("GameCamera")
+	var void_flash = level.get_node("VoidFlash")
+	player.request_attack(Vector2.LEFT)
+	await wait_frames(1)
+	check(camera._kicks.size() >= 2, "a shot kicks the camera in quick steps")
+	var biggest := 0.0
+	for k in camera._kicks:
+		biggest = maxf(biggest, k.length())
+	check(biggest > 0.0 and biggest <= 1.0, "the kick is tiny (%.2f px)" % biggest)
+	await process_frame
+	check(void_flash.strength > 0.0 and RenderingServer.get_default_clear_color() != void_flash._base, "the void flashes on a shot")
+	await create_timer(1.0).timeout
+	check(camera._kicks.is_empty(), "the kick is over quickly")
+	check(void_flash.strength == 0.0, "the void flash fades out")
+
+	# The shot was heard everywhere: for 3 s, no stay-in-room enemy leaves its room.
+	var left_room := []
+	for i in 180:
+		await physics_frame
+		for e in enemies:
+			if e.stays_in_room and e.is_alive() and map.room_at(e.global_position) != e._home_room and not left_room.has(e.name):
+				left_room.append(e.name)
+	check(left_room.is_empty(), "stay-in-room enemies stop at their doorway %s" % [left_room])
+
 	# Kill everyone: the exit opens; walk in: LEVEL COMPLETE.
 	player.global_position = Vector2(3 * 16 + 8, 20 * 16 + 8)
 	for enemy in root.get_tree().get_nodes_in_group("enemies"):

@@ -8,7 +8,8 @@ extends Node2D
 ##   D  swinging door     o  open doorway (no door)
 ##      (a straight run of D's or o's in a wall = one doorway)
 ##   P  player start      g  pistol on the floor
-##   C  cop grunt         V  civilian grunt
+##   C  cop grunt         V  civilian grunt (looks like a cop for now, so
+##                           the player is the only one in pink)
 ##   E  exit (opens once every enemy is dead)
 ##
 ## Rooms are worked out automatically: floor areas separated by walls and
@@ -18,13 +19,16 @@ const TILE := 16
 const GRUNT_SCENE := preload("res://scenes/enemies/grunt.tscn")
 const DOOR_SCENE := preload("res://scenes/props/swing_door.tscn")
 const PICKUP_SCENE := preload("res://scenes/weapons/weapon_pickup.tscn")
-const CIVILIAN_SHEET := preload("res://assets/characters/civilian.png")
 const EXIT_SCRIPT := preload("res://scripts/levels/exit_zone.gd")
 
 @export_multiline var layout: String = ""
 @export var wall_color: Color = Color(0.55, 0.2, 1.0)    # neon purple
 @export var floor_color: Color = Color(0.03, 0.02, 0.06)
 @export var grid_color: Color = Color(0.2, 0.1, 0.35, 0.6)
+## Share of enemies (0 to 1) that will chase you out of their room. The rest
+## stop at their own doorway. Early levels keep this low. Which enemies roam
+## is fixed by map order, so it is the same on every retry.
+@export_range(0.0, 1.0) var roam_chance: float = 0.15
 
 ## Size of the level in pixels.
 var size_px: Vector2
@@ -70,6 +74,16 @@ func _tile_center(at: Vector2i) -> Vector2:
 ## Which room `point` is in, or -1 for walls and doorways.
 func room_at(point: Vector2) -> int:
 	return _room_of_tile.get(Vector2i((point / TILE).floor()), -1)
+
+
+## True if stepping onto `point` would take you out of room `room`: into a
+## doorway or another room. Walls count as inside (bumping one is fine).
+func leaves_room(room: int, point: Vector2) -> bool:
+	var at := Vector2i((point / TILE).floor())
+	if tile(at) in ["D", "o"]:
+		return true
+	var there: int = _room_of_tile.get(at, -1)
+	return there >= 0 and there != room
 
 
 func room_count() -> int:
@@ -182,9 +196,9 @@ func _spawn_things() -> void:
 				var grunt: Node2D = GRUNT_SCENE.instantiate()
 				grunt.name = ("Cop%d" if letter == "C" else "Civilian%d") % count[letter]
 				grunt.position = spot
-				if letter == "V":
-					grunt.sheet = CIVILIAN_SHEET
-					grunt.sheet_rows = 2
+				# Every 1/roam_chance-th enemy (in map order) is a roamer.
+				var index: int = count["C"] + count["V"]
+				grunt.stays_in_room = floori(index * roam_chance) == floori((index - 1) * roam_chance)
 				grunt.start_facing_degrees = rad_to_deg(spot.angle_to_point(_room_center(at)))
 				add_child(grunt)
 			"g":

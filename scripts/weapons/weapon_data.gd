@@ -38,8 +38,11 @@ enum Kind { MELEE, GUN }
 @export var spread_degrees: float = 0.0
 ## How far the shot is heard: 1 = the whole level, 0 = silent.
 @export var noise_loudness: float = 0.0
-## Screen shake per shot, in pixels.
+## Camera kick per shot, in pixels: three tiny jolts in about 0.1 s
+## (a small earthquake). Keep it under 1 so it never hides the action.
 @export var shake: float = 0.0
+## How strongly the void outside the map flashes neon on each shot (0 = never, 1 = full colour).
+@export var void_flash: float = 0.0
 
 @export_group("Looks")
 ## Colour of the weapon lying on the floor (placeholder until art).

@@ -35,6 +35,10 @@ func _ready() -> void:
 	pattern_hud.name = "PatternLogged"
 	add_child(pattern_hud)
 	Game.enemy_died.connect(_on_enemy_died)
+	# Gunshots flash the void outside the map.
+	var void_flash := VoidFlash.new()
+	void_flash.name = "VoidFlash"
+	add_child(void_flash)
 
 
 func _on_enemy_died(_enemy: Node2D) -> void:

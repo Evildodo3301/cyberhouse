@@ -86,6 +86,7 @@ func _physics_process(delta: float) -> void:
 			var side := _side_of(pushers[0].global_position)
 			_target_angle = -side * open_angle_degrees
 			_already_hit.clear()
+			Game.door_opened.emit(self, pushers[0])
 
 	var opening := absf(_target_angle) > absf(angle)
 	var speed := open_speed_degrees if opening else close_speed_degrees

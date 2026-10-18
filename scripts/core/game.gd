@@ -10,6 +10,12 @@ var blood_level: BloodLevel = BloodLevel.FULL
 
 ## Anything can ask for a screen shake; the camera listens to this.
 signal shake_requested(strength: float, direction: Vector2)
+## A gunshot: a tiny triple kick on the camera instead of a shake.
+signal kick_requested(strength: float, direction: Vector2)
+## A gun fired (the void outside the map flashes a neon colour).
+signal shot_fired(weapon: WeaponData)
+## Someone pushed a door open (enemies in the rooms on either side react).
+signal door_opened(door: Node2D, opener: Node2D)
 ## An enemy died (the room listens to know when it's cleared).
 signal enemy_died(enemy: Node2D)
 ## A loud sound happened at `position`. Enemies (M2) will listen to this to
@@ -26,6 +32,10 @@ func cycle_blood_level() -> void:
 
 func shake(strength: float, direction: Vector2 = Vector2.ZERO) -> void:
 	shake_requested.emit(strength, direction)
+
+
+func kick(strength: float, direction: Vector2) -> void:
+	kick_requested.emit(strength, direction)
 
 
 func make_noise(position: Vector2, loudness: float) -> void:

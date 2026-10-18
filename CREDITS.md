@@ -3,7 +3,8 @@
 ## Art
 
 - **Top-down style characters** (cop and civilian sprite sheets,
-  `assets/characters/cop.png`, `assets/characters/civilian.png`)
+  `assets/characters/cop.png`, `assets/characters/civilian.png`, and
+  `assets/characters/player.png`, a pink and cyan recolour of the civilian)
   by **E.Vater**, https://evater.itch.io/top-down-style-characters.
   Licence: free for any purpose, including commercial, as long as credit is given.
 
