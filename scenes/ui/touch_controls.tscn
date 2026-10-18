@@ -18,6 +18,7 @@ side = 1
 [node name="BombButton" type="Node2D" parent="."]
 script = ExtResource("3_bomb")
 radius = 26.0
+radius_cm = 0.9
 color = Color(1, 0.3, 0.2, 1)
 
 [node name="PauseButton" type="Button" parent="."]
