@@ -19,6 +19,10 @@ extends Resource
 ## Seconds between seeing you and attacking. The main fairness knob.
 ## Creative Director asked for faster enemies: 0.2 (design doc default 0.25).
 @export var reaction_time: float = 0.2
+## When on, it notices you the moment you step into its room, wherever it is
+## looking and even behind a pillar. It still waits out reaction_time (the
+## "!") before it charges, so you get a fair split second.
+@export var notice_whole_room: bool = true
 ## Width of the vision cone, in degrees.
 @export var vision_degrees: float = 90.0
 ## How far it can see (8 character widths).

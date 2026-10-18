@@ -22,6 +22,9 @@ enum State { PATROL, ALERT, CHASE, ATTACK, SEARCH, KNOCKED_DOWN, DEAD }
 ## Which way a guard faces at the start (degrees, 0 = right, 90 = down).
 @export var start_facing_degrees: float = 0.0
 @export var body_color: Color = Color(0.45, 0.85, 0.35)   # toxic green
+## The gun it drops when it dies (it still fights with fists for now).
+## Empty = drops nothing.
+@export var carried_weapon: WeaponData
 ## Eye glow used by M3 to show an enemy has adapted. Transparent = none.
 @export var tell_color: Color = Color(0, 0, 0, 0)
 
@@ -68,7 +71,7 @@ func _physics_process(delta: float) -> void:
 		return
 	_state_time += delta
 	var player := _get_player()
-	var sees := player != null and _can_see(player)
+	var sees := player != null and (_in_my_room(player) or _can_see(player))
 	if sees:
 		last_known_position = player.global_position
 		_unseen_time = 0.0
@@ -129,6 +132,17 @@ func _get_player() -> Node2D:
 
 
 # ------------------------------------------------------------------ senses
+
+## True if the player stands in the same room as us (see notice_whole_room).
+func _in_my_room(player: Node2D) -> bool:
+	if not settings.notice_whole_room:
+		return false
+	var level := get_tree().get_first_node_in_group("level")
+	if level == null:
+		return false
+	var room: int = level.room_at(global_position)
+	return room >= 0 and room == level.room_at(player.global_position)
+
 
 ## True if the player is in the vision cone (or right behind it) and no wall
 ## or door is in between.
@@ -237,7 +251,19 @@ func take_hit(attacker: Node2D, direction: Vector2, weapon: String) -> void:
 	if gore:
 		gore.add_kill(global_position + direction * 8.0, direction, body_color, weapon)
 	visible = false
+	_drop_weapon(direction)
 	Game.enemy_died.emit(self)
+
+
+## Its gun flies out of its hand in the direction of the killing blow.
+func _drop_weapon(direction: Vector2) -> void:
+	if carried_weapon == null:
+		return
+	var pickup: WeaponPickup = preload("res://scenes/weapons/weapon_pickup.tscn").instantiate()
+	pickup.weapon = carried_weapon
+	get_parent().add_child.call_deferred(pickup)
+	var fling_direction := direction.rotated(randf_range(-0.6, 0.6))
+	pickup.fling.call_deferred(global_position, fling_direction)
 
 
 ## A door slammed into it: it falls and can't act for a moment.
@@ -294,6 +320,10 @@ func _draw() -> void:
 
 	draw_circle(Vector2.ZERO, 7.0, body_color)
 	draw_line(Vector2.ZERO, facing * 9.0, Color(0.1, 0.1, 0.1), 3.0)
+	if carried_weapon:
+		# The gun it will drop, held at its side.
+		var hand := facing.orthogonal() * 5.0 + facing * 6.0
+		draw_line(hand, hand + facing * 6.0, carried_weapon.color, 2.5)
 	if tell_color.a > 0.0:
 		draw_circle(facing * 4.0, 2.0, tell_color)   # M3 adaptation tell
 
