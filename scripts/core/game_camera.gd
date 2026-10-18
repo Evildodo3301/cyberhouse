@@ -1,6 +1,8 @@
 class_name GameCamera
 extends Camera2D
 ## Follows the player, leans a little toward where they aim, and shakes on kills.
+## The view is tilted a few degrees and sways slowly, so the house is never
+## square on screen (the player's sticks are turned to match).
 ## Gunshots use a "kick" instead: three quick jolts in random directions,
 ## one per frame (about 0.1 s in all, like a small earthquake), with no zoom
 ## or rotation, so it is over before it can hide anything.
@@ -13,6 +15,11 @@ extends Camera2D
 @export var look_ahead_speed: float = 5.0
 ## The lean stays this long after you stop aiming (you fire on release).
 @export var look_ahead_hold: float = 0.5
+## Tilt of the view in degrees, and how far it sways either side of that.
+@export var tilt_degrees: float = 3.0
+@export var sway_degrees: float = 1.5
+## Seconds for one slow sway back and forth.
+@export var sway_seconds: float = 9.0
 ## How quickly the shake fades (per second).
 @export var shake_decay: float = 12.0
 
@@ -24,12 +31,18 @@ var _kick_time: float = 0.0
 var _lean: Vector2 = Vector2.ZERO
 var _last_aim: Vector2 = Vector2.ZERO
 var _aim_hold: float = 0.0
+var _sway_time: float = 0.0
+## Each level leans one way or the other.
+var _tilt_sign: float = 1.0
 
 ## Seconds each of the three kick jolts lasts (one frame at 30 fps).
 const KICK_STEP := 0.033
 
 
 func _ready() -> void:
+	ignore_rotation = false
+	_tilt_sign = -1.0 if randf() < 0.5 else 1.0
+	_update_tilt(0.0)
 	Game.shake_requested.connect(shake)
 	Game.kick_requested.connect(kick)
 	if target:
@@ -38,6 +51,7 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	_update_tilt(delta)
 	if target:
 		# Lean toward the aim. Before, the lean snapped back the instant you
 		# lifted your thumb to shoot: a big jump on every shot.
@@ -61,6 +75,15 @@ func _process(delta: float) -> void:
 		if _kick_time >= KICK_STEP:
 			_kick_time = 0.0
 			_kicks.pop_front()
+
+
+## Slow sway round the level's tilt. The player reads its sticks through it.
+func _update_tilt(delta: float) -> void:
+	_sway_time += delta
+	var degrees := _tilt_sign * tilt_degrees + sin(_sway_time * TAU / sway_seconds) * sway_degrees
+	rotation = deg_to_rad(degrees)
+	if target:
+		target.view_rotation = rotation
 
 
 ## Fist kills shake the screen; gun kills only kick it, so a burst of shots

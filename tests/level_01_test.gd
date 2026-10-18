@@ -125,6 +125,32 @@ func _initialize() -> void:
 	check(camera._kicks.is_empty(), "the kick is over quickly")
 	check(void_flash.strength == 0.0, "the void flash fades out")
 
+	# Kills: the void jumps to a new colour, "+points" pop up, quick kills chain a combo.
+	var score_board = level.get_node("ScoreBoard")
+	while score_board.combo > 0:   # let the machete thug's chain run out
+		await process_frame
+	var victims := enemies.filter(func(e): return e.is_alive())
+	var hue_before: float = void_flash.hue
+	var score_before: int = score_board.score   # the machete thug already scored
+	victims[0].take_hit(player, Vector2.RIGHT, "melee")
+	var jump := absf(fposmod(void_flash.hue - hue_before + 0.5, 1.0) - 0.5)
+	check(jump >= 0.2, "a kill makes the void jump to a new colour (%.2f of the wheel)" % jump)
+	check(void_flash.glow > 0.9, "the void glows brighter right after a kill")
+	check(score_board.score - score_before == 400 and score_board._popups.size() == 1, "a kill scores 400 and pops up \"+400\"")
+	victims[1].take_hit(player, Vector2.RIGHT, "melee")
+	await process_frame
+	check(score_board.combo == 2 and score_board.score - score_before == 1200 and score_board._combo_label.visible, "a quick second kill is a x2 combo (+800)")
+	await create_timer(score_board.combo_window + 0.2).timeout
+	check(score_board.combo == 0 and not score_board._combo_label.visible, "the combo breaks after a pause")
+	check(score_board._popups.is_empty(), "the popups fade away")
+
+	# Camera tilt: a few degrees, and the stick still moves you straight up the screen.
+	var tilt := absf(rad_to_deg(camera.rotation))
+	check(tilt >= 1.0 and tilt <= 5.0, "the view is tilted a little (%.1f°)" % tilt)
+	check(is_equal_approx(player.view_rotation, camera.rotation), "the player reads the sticks through the tilt")
+	var on_screen: Vector2 = level.get_viewport().get_canvas_transform().basis_xform(Vector2.UP.rotated(player.view_rotation))
+	check(on_screen.normalized().dot(Vector2.UP) > 0.999, "pushing up moves you straight up the screen")
+
 	# The shot was heard everywhere: for 3 s, no stay-in-room enemy leaves its room.
 	var left_room := []
 	for i in 180:

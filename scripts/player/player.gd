@@ -65,6 +65,9 @@ var weapon: WeaponData
 var ammo: int = -1
 ## True while the crosshair sits on someone your attack would hit.
 var crosshair_on_target: bool = false
+## How far the camera is tilted (radians). The sticks are read on screen, so
+## they are turned by this much: pushing up always moves you up the screen.
+var view_rotation: float = 0.0
 var _alive: bool = true
 # Remembered for the death report.
 var _last_attack: String = ""
@@ -152,8 +155,8 @@ func _physics_process(delta: float) -> void:
 
 func _read_move_input() -> Vector2:
 	if touch_controls and touch_controls.move_vector != Vector2.ZERO:
-		return touch_controls.move_vector
-	return Input.get_vector("move_left", "move_right", "move_up", "move_down")
+		return touch_controls.move_vector.rotated(view_rotation)
+	return Input.get_vector("move_left", "move_right", "move_up", "move_down").rotated(view_rotation)
 
 
 func _update_movement(delta: float) -> void:
@@ -178,8 +181,8 @@ func _keyboard_aim() -> Vector2:
 ## The direction the player is actively aiming, or ZERO when not aiming.
 func get_aim_input() -> Vector2:
 	if touch_controls and touch_controls.aim_vector != Vector2.ZERO:
-		return touch_controls.aim_vector.normalized()
-	return _keyboard_aim().normalized()
+		return touch_controls.aim_vector.normalized().rotated(view_rotation)
+	return _keyboard_aim().normalized().rotated(view_rotation)
 
 
 func _update_facing() -> void:
@@ -262,7 +265,7 @@ func request_attack(direction: Vector2) -> void:
 		var target := _find_target(facing, tap_range, settings.tap_assist_degrees)
 		direction = global_position.direction_to(target.global_position) if target else facing
 	else:
-		direction = assisted_direction(direction.normalized())
+		direction = assisted_direction(direction.normalized().rotated(view_rotation))
 	_attack_direction = direction
 	facing = direction
 	_attack_state = AttackState.WINDUP
