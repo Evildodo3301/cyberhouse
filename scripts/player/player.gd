@@ -29,6 +29,7 @@ signal died(weapon: String)
 
 const BOMB_SCENE := preload("res://scenes/weapons/bomb.tscn")
 const PICKUP_SCENE := preload("res://scenes/weapons/weapon_pickup.tscn")
+const BULLET_SCENE := preload("res://scenes/weapons/bullet.tscn")
 const CROSSHAIR_TEXTURE := preload("res://assets/ui/crosshair.png")
 
 ## All the tuning numbers. Edit res://data/player_settings.tres to change them.
@@ -63,7 +64,7 @@ var _attack_timer: float = 0.0
 var _attack_direction: Vector2 = Vector2.RIGHT
 var _swing_flash: float = 0.0   # how long the swing arc stays visible
 var _stride: float = 0.0   # distance walked, drives the step animation
-var _tracers: Array = []   # recent shots: {"from", "to", "time"} in room coordinates
+var _muzzle_flash: float = 0.0   # seconds the flash at the barrel stays visible
 var _crosshair: Sprite2D
 
 @onready var _legs: Node2D = $Legs
@@ -272,18 +273,16 @@ func has_gun() -> bool:
 	return weapon != null and weapon.kind == WeaponData.Kind.GUN
 
 
-## Fires the gun: each bullet flies instantly in a straight line and kills
-## the first target it meets, unless a wall or a closed door is in the way.
+## Fires the gun: each bullet flies across the room (Bullet) and kills the
+## first target it meets, unless a wall or a closed door stops it first.
 func _fire() -> void:
 	ammo -= 1
+	_muzzle_flash = 0.05
 	for i in maxi(weapon.pellets, 1):
 		var spread := deg_to_rad(randf_range(-weapon.spread_degrees, weapon.spread_degrees))
-		var direction := _attack_direction.rotated(spread)
-		var shot := trace_shot(direction)
-		_tracers.append({"from": global_position + direction * 9.0, "to": shot.end, "time": 0.06})
-		if shot.target:
-			shot.target.take_hit(self, direction, String(weapon.id))
-			_play_kill_feedback(shot.target)
+		var bullet: Bullet = BULLET_SCENE.instantiate()
+		get_parent().add_child(bullet)
+		bullet.fire(global_position, _attack_direction.rotated(spread), weapon, self)
 	if weapon.noise_loudness > 0.0:
 		Game.make_noise(global_position, weapon.noise_loudness)   # enemies hear it
 	if weapon.shake > 0.0:
@@ -350,9 +349,7 @@ func _drop_weapon(direction: Vector2) -> void:
 
 
 func _update_tracers(delta: float) -> void:
-	for tracer in _tracers:
-		tracer.time -= delta
-	_tracers = _tracers.filter(func(t): return t.time > 0.0)
+	_muzzle_flash = maxf(_muzzle_flash - delta, 0.0)
 
 
 # --------------------------------------------------------------- crosshair
@@ -474,9 +471,9 @@ func _draw() -> void:
 	if not _alive:
 		return   # the body is painted on the floor by the gore layer
 
-	# Shots: a bright line that fades in a few frames.
-	for tracer in _tracers:
-		draw_line(to_local(tracer.from), to_local(tracer.to), Color(1, 0.95, 0.6, tracer.time / 0.06), 1.5)
+	# Muzzle flash at the end of the barrel.
+	if _muzzle_flash > 0.0:
+		draw_circle(_attack_direction * 15.0, 3.0, Color(1, 0.95, 0.6))
 	if has_gun():
 		return   # the swing arcs below are for melee only
 

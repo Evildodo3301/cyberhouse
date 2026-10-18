@@ -15,8 +15,8 @@ enum Kind { MELEE, GUN }
 @export var kind: Kind = Kind.MELEE
 
 @export_group("Reach")
-## Melee: how far the swing reaches. Gun: how far a bullet flies.
-## The crosshair sits at this distance.
+## Melee: how far the swing reaches. Gun: how far a bullet flies before it
+## drops (about half the screen for the pistol). The crosshair sits here.
 @export var reach: float = 24.0
 ## Melee only: how wide the swing is, in degrees.
 @export var arc_degrees: float = 90.0
@@ -30,6 +30,8 @@ enum Kind { MELEE, GUN }
 @export_group("Gun")
 ## Shots in a fresh gun. When it runs dry you drop it and fight with fists.
 @export var ammo: int = 0
+## How fast bullets fly, in pixels per second (you can see them travel).
+@export var bullet_speed: float = 420.0
 ## Bullets per shot (a shotgun would use 5 or more).
 @export var pellets: int = 1
 ## Random spread of each bullet, in degrees either side.
