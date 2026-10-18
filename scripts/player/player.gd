@@ -7,6 +7,10 @@ extends CharacterBody2D
 ##             quick tap on the right = attack the nearest target in front,
 ##             BOMB button = throw a bomb.
 ##   Keyboard: WASD = move, arrow keys = aim, Space = attack, E = bomb (for PC testing).
+##
+## The body is two parts that turn on their own:
+##   Torso = faces where you AIM (right stick), or where you walk when not aiming.
+##   Legs  = face where you WALK, so you can run one way and swing another.
 
 ## Emitted the moment a swing kills something. The camera uses it to shake
 ## (and in M5 the hit sound will listen to it too, so they stay in sync).
@@ -26,8 +30,10 @@ const BOMB_SCENE := preload("res://scenes/weapons/bomb.tscn")
 ## Set by main.gd. Can stay empty (keyboard only).
 var touch_controls: TouchControls
 
-## The direction the hitman is looking (always length 1).
+## The direction the hitman is looking (always length 1). The torso shows it.
 var facing: Vector2 = Vector2.RIGHT
+## The direction the legs point, in radians. Follows movement only.
+var legs_angle: float = 0.0
 ## Bombs left in this room.
 var bombs_left: int = 0
 var _alive: bool = true
@@ -42,6 +48,10 @@ var _attack_state: AttackState = AttackState.READY
 var _attack_timer: float = 0.0
 var _attack_direction: Vector2 = Vector2.RIGHT
 var _swing_flash: float = 0.0   # how long the swing arc stays visible
+var _stride: float = 0.0   # distance walked, drives the step animation
+
+@onready var _legs: Node2D = $Legs
+@onready var _torso: Node2D = $Torso
 
 
 func _ready() -> void:
@@ -49,6 +59,9 @@ func _ready() -> void:
 		settings = PlayerSettings.new()   # fall back to default values
 	add_to_group("player")   # bombs look for this group
 	bombs_left = settings.bombs_per_room
+	# The parts are plain nodes so art can later drop a sprite into each one.
+	_legs.draw.connect(_draw_legs)
+	_torso.draw.connect(_draw_torso)
 
 
 func _physics_process(delta: float) -> void:
@@ -56,12 +69,16 @@ func _physics_process(delta: float) -> void:
 		return
 	_update_movement(delta)
 	_update_facing()
+	_update_body(delta)
 	if Input.is_action_just_pressed("attack"):
 		request_attack(_keyboard_aim())   # ZERO = "nearest target", like a tap
 	if Input.is_action_just_pressed("throw_bomb"):
 		request_bomb(Vector2.ZERO)
 	_update_attack(delta)
 	queue_redraw()
+	_legs.queue_redraw()
+	_torso.queue_redraw()
+
 
 
 # ---------------------------------------------------------------- movement
@@ -107,6 +124,23 @@ func _update_facing() -> void:
 		facing = aim                        # aiming wins...
 	elif velocity.length() > 1.0:
 		facing = velocity.normalized()      # ...otherwise face where you walk
+
+
+## Turns the two body parts. The torso snaps to the aim; the legs turn
+## smoothly toward the way we move, and ignore the aim completely.
+func _update_body(delta: float) -> void:
+	_torso.rotation = facing.angle()   # angle() = atan2(y, x)
+	var speed := velocity.length()
+	if speed > settings.legs_idle_speed:
+		# How far to turn this frame. Using exp() makes the turn feel the same
+		# at 30 or 120 frames per second.
+		var weight := 1.0 - exp(-settings.legs_turn_speed * delta)
+		# lerp_angle takes the short way round (never spins 350 degrees).
+		legs_angle = lerp_angle(legs_angle, velocity.angle(), weight)
+		_stride += speed * delta
+	else:
+		_stride = 0.0   # idle: feet back together under the torso
+	_legs.rotation = legs_angle
 
 
 ## Aim assist: if a target sits close to the aim line, return the direction
@@ -243,6 +277,8 @@ func take_hit(attacker: Node2D, direction: Vector2, weapon: String) -> void:
 		Input.vibrate_handheld(settings.big_vibration_ms)
 	Game.hit_stop(settings.death_freeze_time)
 	queue_redraw()
+	_legs.queue_redraw()
+	_torso.queue_redraw()
 
 
 ## The "death move" data the learning system (M3) tags deaths with.
@@ -297,10 +333,6 @@ func _draw() -> void:
 		var reach := settings.aim_assist_range if aiming or locked else settings.melee_range + 6.0
 		draw_line(dir * 10.0, dir * reach, Color(accent_color, alpha), 1.0)
 
-	# Body and a "visor" showing which way he faces.
-	draw_circle(Vector2.ZERO, 7.0, body_color)
-	draw_line(Vector2.ZERO, facing * 10.0, accent_color, 3.0)
-
 	# Wind-up: a thin outline of where the swing is about to land.
 	var half_arc := deg_to_rad(settings.melee_arc_degrees * 0.5)
 	var angle := _attack_direction.angle()
@@ -309,3 +341,26 @@ func _draw() -> void:
 	# The swing itself: a bright, thick arc for a few frames.
 	if _swing_flash > 0.0:
 		draw_arc(Vector2.ZERO, settings.melee_range * 0.8, angle - half_arc, angle + half_arc, 12, Color(1, 1, 1, 0.95), 5.0)
+
+
+# Both parts are drawn pointing right (+x). Their node rotation turns them.
+
+func _draw_legs() -> void:
+	if not _alive:
+		return
+	# Feet swing forward and back in turn, one full cycle per stride_length.
+	var step := sin(_stride / maxf(settings.stride_length, 1.0) * TAU) * 6.0
+	var foot_color := body_color.darkened(0.6)
+	_legs.draw_rect(Rect2(Vector2(step - 3.0, -5.0), Vector2(6, 3.5)), foot_color)
+	_legs.draw_rect(Rect2(Vector2(-step - 3.0, 1.5), Vector2(6, 3.5)), foot_color)
+
+
+func _draw_torso() -> void:
+	if not _alive:
+		return
+	# Shoulders: an oval, wide across, narrow front to back.
+	_torso.draw_set_transform(Vector2.ZERO, 0.0, Vector2(0.6, 1.0))
+	_torso.draw_circle(Vector2.ZERO, 7.0, body_color)
+	_torso.draw_set_transform(Vector2.ZERO)
+	_torso.draw_circle(Vector2(0.5, 0), 3.5, body_color.lightened(0.25))   # head
+	_torso.draw_line(Vector2(2, 0), Vector2(10, 0), accent_color, 3.0)   # visor / arm

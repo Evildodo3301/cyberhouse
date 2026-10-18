@@ -17,6 +17,16 @@ extends Resource
 ## Seconds to stop completely after you let go.
 @export var stop_time: float = 0.05
 
+@export_group("Body")
+## How fast the legs turn to face the way you walk. Higher = snappier,
+## lower = the legs lag behind and swing round.
+@export var legs_turn_speed: float = 20.0
+## Below this speed (px/s) the hitman counts as standing still: the legs stop
+## stepping and tuck under the torso.
+@export var legs_idle_speed: float = 4.0
+## Distance covered by one full left-right step cycle.
+@export var stride_length: float = 14.0
+
 @export_group("Melee attack")
 ## How far the swing reaches (1.5 character widths).
 @export var melee_range: float = 24.0
