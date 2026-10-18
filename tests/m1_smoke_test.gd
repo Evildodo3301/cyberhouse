@@ -360,5 +360,130 @@ func _initialize() -> void:
 	check(not guard.is_alive() and drops.size() == 1, "a killed grunt drops his gun")
 	check(drops.size() == 1 and drops[0].global_position.x > guard.global_position.x + 8.0, "the gun is flung in the direction of the hit")
 
+	# ------------------------------------------------- M3 learning enemies
+	tracker = root.get_node("TacticTracker")
+	var room := &"m1_test_arena"
+	# 21. The rules, fed with fake reports: block the death move + the best move.
+	tracker.clear_room(room)
+	tracker.start_attempt()
+	var rush_kill := {"victim": "G", "weapon": "melee", "distance": 15.0, "player_speed": 90.0, "at_door": false, "enemy_state": "CHASE"}
+	tracker.report_kill(rush_kill.duplicate())
+	tracker.report_kill(rush_kill.duplicate())
+	tracker.report_kill({"victim": "D", "weapon": "melee", "distance": 15.0, "player_speed": 90.0, "at_door": false})
+	check(tracker.get_room_reports()[2].tactic == &"", "dummy kills teach the room nothing")
+	tracker.report_player_death({"killer_type": "enemy_melee", "in_doorway": true, "player_speed": 0.0, "last_attack": "", "last_attack_seconds_ago": -1.0})
+	check(tracker.get_active_counters() == [&"DOOR_AMBUSH", &"RUSH"], "death in a door blocks DOOR AMBUSH plus your best move (RUSH)")
+	check(tracker.take_new_blocks() == [&"DOOR_AMBUSH", &"RUSH"] and tracker.take_new_blocks().is_empty(), "both are announced once")
+	tracker.start_attempt()
+	tracker.report_kill({"victim": "G", "weapon": "pistol", "distance": 90.0, "player_speed": 0.0, "at_door": false, "enemy_state": "CHASE"})
+	tracker.report_player_death({"killer_type": "own_bomb", "in_doorway": false, "player_speed": 0.0, "last_attack": "bomb", "last_attack_seconds_ago": 1.2})
+	check(tracker.get_active_counters() == [&"BOMB", &"LONG_RANGE"], "never more than 2 blocked of 4: the oldest drop out")
+	for i in 3:
+		tracker.start_attempt()
+		tracker.report_player_death({"killer_type": "enemy_melee", "in_doorway": false, "player_speed": 90.0, "last_attack": "", "last_attack_seconds_ago": -1.0})
+	check(tracker.get_active_counters() == [&"LONG_RANGE", &"RUSH"] or tracker.get_active_counters() == [&"BOMB", &"RUSH"], "a rushing death blocks RUSH")
+	var before: Array = tracker.get_active_counters()
+	tracker.start_attempt()
+	tracker.report_player_death({"killer_type": "own_bomb", "in_doorway": true, "player_speed": 0.0, "last_attack": "bomb", "last_attack_seconds_ago": 0.5})
+	check(tracker.get_active_counters() == before, "after 5 deaths in a room nothing new is blocked")
+	tracker.clear_room(room)
+	check(tracker.get_active_counters().is_empty(), "clearing the room forgets everything")
+
+	# 22. A real death on screen: the restart shows PATTERN LOGGED, eyes glow.
+	await reload_room(true)
+	main = current_scene
+	player = main.get_node("Player")
+	main.get_node("GruntPatrol").free()
+	guard = main.get_node("GruntGuard")
+	player.global_position = guard.global_position + Vector2(-60, 0)
+	player.velocity = Vector2(96, 0)
+	touch(0, Vector2(100, 250), true)
+	drag(0, Vector2(140, 250))   # run straight at it
+	for i in 120:
+		await wait_frames(1)
+		if not player.is_alive():
+			break
+	touch(0, Vector2(140, 250), false)
+	check(not player.is_alive() and tracker.get_active_counters().has(&"RUSH"), "dying mid-rush blocks RUSH")
+	await reload_room(true)
+	main = current_scene
+	var hud = main.get_node("PatternLogged")
+	check(hud._message.visible and "PATTERN LOGGED: RUSH" in hud._message.text, "the restart flashes PATTERN LOGGED: RUSH")
+	check("RUSH" in hud._blocked.text, "the blocked move stays listed on screen")
+	guard = main.get_node("GruntGuard")
+	check(guard.tell_color.a > 0.0 and guard.counters(&"RUSH"), "adapted grunts have glowing eyes")
+
+	# 23. RUSH counter: run at it and it backs off at its normal speed.
+	player = main.get_node("Player")
+	main.get_node("GruntPatrol").free()
+	player.global_position = guard.global_position + Vector2(-70, 0)
+	await wait_frames(20)   # it notices you and starts to come
+	touch(0, Vector2(100, 250), true)
+	drag(0, Vector2(140, 250))
+	var backed := false
+	var fastest := 0.0
+	for i in 40:
+		await wait_frames(1)
+		fastest = maxf(fastest, guard.velocity.length())
+		if guard._bark_text == "BACK" and guard.velocity.x > 0.0:
+			backed = true
+	touch(0, Vector2(140, 250), false)
+	check(backed, "rushed grunt backs away, calling BACK")
+	check(fastest <= guard.settings.chase_speed + 0.5, "learning never makes it faster")
+
+	# 24. DOOR_AMBUSH counter: wait beside the door and it won't come through.
+	tracker.clear_room(room)
+	tracker.blocked_by_room[room] = [&"DOOR_AMBUSH"]
+	await reload_room(true)
+	main = current_scene
+	player = main.get_node("Player")
+	main.get_node("GruntGuard").free()
+	var patrol2 = main.get_node("GruntPatrol")
+	player.global_position = Vector2(284, 140)   # just left of the doorway
+	root.get_node("Game").make_noise(player.global_position, 1.0)
+	var held := false
+	var came_through := false
+	for i in 240:
+		await wait_frames(1)
+		if patrol2._bark_text == "HOLD":
+			held = true
+		if patrol2.global_position.x < 300.0:
+			came_through = true
+	check(held and not came_through, "door camper: the grunt holds outside the door (HOLD)")
+
+	# 25. LONG_RANGE counter: hold a gun far away and it hides behind a wall.
+	tracker.blocked_by_room[room] = [&"LONG_RANGE"]
+	await reload_room(true)
+	main = current_scene
+	player = main.get_node("Player")
+	main.get_node("GruntPatrol").free()
+	guard = main.get_node("GruntGuard")
+	player.equip(load("res://data/weapons/pistol.tres"), -1)
+	player.global_position = Vector2(364, 150)   # the pillar at y 200-224 sits between you
+	var hid := false
+	for i in 120:
+		await wait_frames(1)
+		var ray := PhysicsRayQueryParameters2D.create(player.global_position, guard.global_position, 1 | 16)
+		if guard._bark_text == "COVER" and not player.get_world_2d().direct_space_state.intersect_ray(ray).is_empty():
+			hid = true
+			break
+	check(hid, "gun at range: the grunt takes cover out of your line of fire (COVER)")
+
+	# 26. BOMB counter: it runs from a landed bomb and survives it.
+	tracker.blocked_by_room[room] = [&"BOMB"]
+	await reload_room(true)
+	main = current_scene
+	player = main.get_node("Player")
+	main.get_node("GruntPatrol").free()
+	guard = main.get_node("GruntGuard")
+	player.global_position = Vector2(370, 270)
+	await wait_frames(2)
+	player.request_bomb(Vector2.RIGHT)
+	await wait_frames(25)
+	check(guard._flee_time > 0.0, "a bomb lands near it: it scatters")
+	await wait_frames(70)
+	check(guard.is_alive(), "and it survives the blast")
+	tracker.clear_room(room)
+
 	print("\n%s (%d failure(s))" % ["ALL PASSED" if failures == 0 else "SOME FAILED", failures])
 	quit(failures)

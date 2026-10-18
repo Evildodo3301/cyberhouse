@@ -37,6 +37,11 @@ var _push_zone: Area2D
 var _already_hit: Array[Node] = []
 
 
+## The middle of the doorway, in room coordinates.
+func center() -> Vector2:
+	return global_position + Vector2.from_angle(global_rotation) * length * 0.5
+
+
 func _ready() -> void:
 	add_to_group("doors")
 	if door_id == "":

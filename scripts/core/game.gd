@@ -15,6 +15,8 @@ signal enemy_died(enemy: Node2D)
 ## A loud sound happened at `position`. Enemies (M2) will listen to this to
 ## "hear" things. `loudness` 1.0 = the whole room hears it.
 signal noise_made(position: Vector2, loudness: float)
+## A bomb hit the floor and its fuse is burning (enemies that learned BOMB scatter).
+signal bomb_landed(position: Vector2, blast_radius: float)
 
 
 func cycle_blood_level() -> void:
