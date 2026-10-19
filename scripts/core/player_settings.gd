@@ -23,6 +23,12 @@ extends Resource
 @export var start_weapon: WeaponData
 ## How close you must walk to a weapon on the floor to pick it up.
 @export var pickup_radius: float = 10.0
+## What walking over a weapon does.
+##   ALWAYS_SWAP: you switch to it, and what you held drops at your feet
+##     (fists are never dropped). Walk off and back on to switch back.
+##   ONLY_WHEN_EMPTY: you only pick it up with bare fists.
+enum PickupMode { ALWAYS_SWAP, ONLY_WHEN_EMPTY }
+@export var pickup_mode: PickupMode = PickupMode.ALWAYS_SWAP
 
 @export_group("Crosshair")
 ## Size of the crosshair in pixels.

@@ -33,6 +33,10 @@ func _physics_process(delta: float) -> void:
 	if not wall.is_empty():
 		to = wall.position
 		stop = true
+		# A door it hits swings a little way open.
+		var door: Node = wall.collider.get_parent()
+		if door and door.has_method("nudge"):
+			door.nudge(from)
 	# The first living target along this step gets hit.
 	var target := _first_target(from, to)
 	if target:

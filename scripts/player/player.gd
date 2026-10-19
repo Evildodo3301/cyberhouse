@@ -37,6 +37,20 @@ const CROSSHAIR_TEXTURE := preload("res://assets/ui/crosshair.png")
 @export var body_color: Color = Color(1.0, 0.16, 0.54)   # neon pink
 @export var accent_color: Color = Color(0.16, 0.94, 1.0) # neon cyan
 
+@export_group("Look")
+## Sprite sheets: the comedylife top-down character template (one row of
+## 38 frames, 64 x 64, drawn facing up), recoloured pink and cyan and split
+## in two so the legs and torso can turn apart. Empty = placeholder shapes.
+## Frames: 0-1 idle, 2-11 walk, 12-23 rifle, 24-35 pistol, 36-37 die.
+@export var torso_sheet: Texture2D = preload("res://assets/characters/player_torso.png")
+@export var legs_sheet: Texture2D = preload("res://assets/characters/player_legs.png")
+## The whole body in one sheet, used for the corpse.
+@export var body_sheet: Texture2D = preload("res://assets/characters/player_body.png")
+## Sheet pixels to room pixels (same as the enemies).
+@export var sprite_scale: float = 0.6
+## Room pixels walked per walk-cycle frame.
+@export var stride_per_frame: float = 4.0
+
 ## Set by main.gd. Can stay empty (keyboard only).
 var touch_controls: TouchControls
 
@@ -51,6 +65,9 @@ var weapon: WeaponData
 var ammo: int = -1
 ## True while the crosshair sits on someone your attack would hit.
 var crosshair_on_target: bool = false
+## How far the camera is tilted (radians). The sticks are read on screen, so
+## they are turned by this much: pushing up always moves you up the screen.
+var view_rotation: float = 0.0
 var _alive: bool = true
 # Remembered for the death report.
 var _last_attack: String = ""
@@ -66,6 +83,22 @@ var _swing_flash: float = 0.0   # how long the swing arc stays visible
 var _stride: float = 0.0   # distance walked, drives the step animation
 var _muzzle_flash: float = 0.0   # seconds the flash at the barrel stays visible
 var _crosshair: Sprite2D
+var _sprite: Sprite2D        # arms, body and head, on the torso (turns with the aim)
+var _legs_sprite: Sprite2D   # the feet, on the legs (turn with the walk)
+var _idle_time: float = 0.0
+var _muzzle_light: Sprite2D   # the circle of light a shot casts around you
+var _light_time: float = 0.0
+
+## Muzzle light: radius in pixels and how long it takes to fade.
+const LIGHT_RADIUS := 30.0
+const LIGHT_TIME := 0.08
+
+const SHEET_COLUMNS := 38
+const IDLE_FRAMES := [0, 1]
+const WALK_FRAMES := [2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+const PISTOL_IDLE_FRAMES := [24, 25]
+const PISTOL_WALK_FRAMES := [26, 27, 28, 29, 30, 31, 32, 33, 34, 35]
+const DIE_FRAMES := [36, 37]
 
 @onready var _legs: Node2D = $Legs
 @onready var _torso: Node2D = $Torso
@@ -81,6 +114,14 @@ func _ready() -> void:
 	# The parts are plain nodes so art can later drop a sprite into each one.
 	_legs.draw.connect(_draw_legs)
 	_torso.draw.connect(_draw_torso)
+	if torso_sheet and legs_sheet:
+		_legs_sprite = _make_sprite(legs_sheet)
+		_legs.add_child(_legs_sprite)
+		_sprite = _make_sprite(torso_sheet)
+		_sprite.show_behind_parent = true   # the gun in hand is drawn on top
+		_torso.add_child(_sprite)
+	_muzzle_light = _make_light()
+	add_child(_muzzle_light)
 	_crosshair = Sprite2D.new()
 	_crosshair.texture = CROSSHAIR_TEXTURE
 	_crosshair.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
@@ -114,8 +155,8 @@ func _physics_process(delta: float) -> void:
 
 func _read_move_input() -> Vector2:
 	if touch_controls and touch_controls.move_vector != Vector2.ZERO:
-		return touch_controls.move_vector
-	return Input.get_vector("move_left", "move_right", "move_up", "move_down")
+		return touch_controls.move_vector.rotated(view_rotation)
+	return Input.get_vector("move_left", "move_right", "move_up", "move_down").rotated(view_rotation)
 
 
 func _update_movement(delta: float) -> void:
@@ -140,8 +181,8 @@ func _keyboard_aim() -> Vector2:
 ## The direction the player is actively aiming, or ZERO when not aiming.
 func get_aim_input() -> Vector2:
 	if touch_controls and touch_controls.aim_vector != Vector2.ZERO:
-		return touch_controls.aim_vector.normalized()
-	return _keyboard_aim().normalized()
+		return touch_controls.aim_vector.normalized().rotated(view_rotation)
+	return _keyboard_aim().normalized().rotated(view_rotation)
 
 
 func _update_facing() -> void:
@@ -170,6 +211,16 @@ func _update_body(delta: float) -> void:
 	else:
 		_stride = 0.0   # idle: feet back together under the torso
 	_legs.rotation = legs_angle
+	if _sprite:
+		_idle_time += delta
+		var walking := speed > settings.legs_idle_speed
+		var step := int(_stride / stride_per_frame)
+		var idle_step := int(_idle_time * 2.0)   # slow breathing, 2 frames a second
+		if has_gun():
+			_sprite.frame = PISTOL_WALK_FRAMES[step % 10] if walking else PISTOL_IDLE_FRAMES[idle_step % 2]
+		else:
+			_sprite.frame = WALK_FRAMES[step % 10] if walking else IDLE_FRAMES[idle_step % 2]
+		_legs_sprite.frame = WALK_FRAMES[step % 10] if walking else IDLE_FRAMES[0]
 
 
 ## Aim assist: if a target sits close to the aim line, return the direction
@@ -214,7 +265,7 @@ func request_attack(direction: Vector2) -> void:
 		var target := _find_target(facing, tap_range, settings.tap_assist_degrees)
 		direction = global_position.direction_to(target.global_position) if target else facing
 	else:
-		direction = assisted_direction(direction.normalized())
+		direction = assisted_direction(direction.normalized().rotated(view_rotation))
 	_attack_direction = direction
 	facing = direction
 	_attack_state = AttackState.WINDUP
@@ -278,6 +329,7 @@ func has_gun() -> bool:
 func _fire() -> void:
 	ammo -= 1
 	_muzzle_flash = 0.05
+	_light_time = LIGHT_TIME
 	for i in maxi(weapon.pellets, 1):
 		var spread := deg_to_rad(randf_range(-weapon.spread_degrees, weapon.spread_degrees))
 		var bullet: Bullet = BULLET_SCENE.instantiate()
@@ -286,7 +338,8 @@ func _fire() -> void:
 	if weapon.noise_loudness > 0.0:
 		Game.make_noise(global_position, weapon.noise_loudness)   # enemies hear it
 	if weapon.shake > 0.0:
-		Game.shake(weapon.shake, _attack_direction)
+		Game.kick(weapon.shake, _attack_direction)
+	Game.shot_fired.emit(weapon)
 	weapon_changed.emit(weapon, ammo)
 	if ammo <= 0:
 		_drop_weapon(_attack_direction.rotated(PI * 0.75))   # empty: toss it aside
@@ -331,10 +384,22 @@ func equip(new_weapon: WeaponData, new_ammo: int) -> void:
 	weapon_changed.emit(weapon, ammo)
 
 
-## Called by a WeaponPickup we walk over. Only empty hands pick things up.
+## Called by a WeaponPickup we walk over. With bare fists you always take
+## it; holding something else, ALWAYS_SWAP drops that at your feet and
+## takes the new one (see PlayerSettings.pickup_mode).
 func try_pick_up(pickup: WeaponPickup) -> bool:
-	if not _alive or weapon != settings.start_weapon or not pickup.is_usable():
+	if not _alive or not pickup.is_usable():
 		return false
+	if weapon != settings.start_weapon:
+		if settings.pickup_mode != PlayerSettings.PickupMode.ALWAYS_SWAP:
+			return false
+		var dropped: WeaponPickup = PICKUP_SCENE.instantiate()
+		dropped.weapon = weapon
+		dropped.ammo = maxi(ammo, 0)
+		dropped.ignore_player = true   # don't grab it straight back
+		get_parent().add_child.call_deferred(dropped)
+		# Tossed aside about a metre (two body widths), spinning as it slides.
+		dropped.fling.call_deferred(global_position, facing.rotated(PI * 0.75), 160.0)
 	equip(pickup.weapon, pickup.ammo)
 	return true
 
@@ -350,6 +415,33 @@ func _drop_weapon(direction: Vector2) -> void:
 
 func _update_tracers(delta: float) -> void:
 	_muzzle_flash = maxf(_muzzle_flash - delta, 0.0)
+	_light_time = maxf(_light_time - delta, 0.0)
+	_muzzle_light.visible = _light_time > 0.0
+	_muzzle_light.modulate.a = _light_time / LIGHT_TIME
+
+
+## A soft warm circle, added on top of everything under it (so it lights the
+## floor and bodies rather than painting over them).
+func _make_light() -> Sprite2D:
+	var gradient := Gradient.new()
+	gradient.set_color(0, Color(1.0, 0.85, 0.55, 0.6))
+	gradient.set_color(1, Color(1.0, 0.6, 0.3, 0.0))
+	var texture := GradientTexture2D.new()
+	texture.gradient = gradient
+	texture.fill = GradientTexture2D.FILL_RADIAL
+	texture.fill_from = Vector2(0.5, 0.5)
+	texture.fill_to = Vector2(1.0, 0.5)
+	texture.width = 64
+	texture.height = 64
+	var light := Sprite2D.new()
+	light.texture = texture
+	light.scale = Vector2.ONE * LIGHT_RADIUS * 2.0 / 64.0
+	var material := CanvasItemMaterial.new()
+	material.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
+	light.material = material
+	light.z_index = 5
+	light.visible = false
+	return light
 
 
 # --------------------------------------------------------------- crosshair
@@ -421,7 +513,10 @@ func take_hit(attacker: Node2D, direction: Vector2, weapon: String) -> void:
 	_report_death(attacker, weapon)
 	var gore := get_tree().get_first_node_in_group("gore")
 	if gore:
-		gore.add_kill(global_position, direction, body_color, weapon)
+		gore.add_kill(global_position, direction, body_color, weapon, _corpse())
+	if _sprite:
+		_sprite.visible = false
+		_legs_sprite.visible = false
 	died.emit(weapon)
 	Game.shake(settings.big_shake)
 	if settings.big_vibration_ms > 0:
@@ -473,7 +568,7 @@ func _draw() -> void:
 
 	# Muzzle flash at the end of the barrel.
 	if _muzzle_flash > 0.0:
-		draw_circle(_attack_direction * 15.0, 3.0, Color(1, 0.95, 0.6))
+		draw_circle(_attack_direction * 12.0, 3.0, Color(1, 0.95, 0.6))
 	if has_gun():
 		return   # the swing arcs below are for melee only
 
@@ -495,12 +590,22 @@ func _draw_legs() -> void:
 	# Feet swing forward and back in turn, one full cycle per stride_length.
 	var step := sin(_stride / maxf(settings.stride_length, 1.0) * TAU) * 6.0
 	var foot_color := body_color.darkened(0.6)
+	if _sprite:
+		return   # the legs sprite shows the feet
 	_legs.draw_rect(Rect2(Vector2(step - 3.0, -5.0), Vector2(6, 3.5)), foot_color)
 	_legs.draw_rect(Rect2(Vector2(-step - 3.0, 1.5), Vector2(6, 3.5)), foot_color)
 
 
 func _draw_torso() -> void:
 	if not _alive:
+		return
+	if _sprite:
+		if has_gun():
+			_torso.draw_rect(Rect2(5, -1.25, 6, 2.5), weapon.color)   # held out in both hands
+		elif weapon != settings.start_weapon:
+			# A blade in the right hand, pointing forward.
+			_torso.draw_rect(Rect2(2, 3, 3, 2), Color(0.35, 0.2, 0.1))   # handle
+			_torso.draw_line(Vector2(5, 4), Vector2(5 + weapon.reach * 0.35, 4), weapon.color, 2.0)
 		return
 	# Shoulders: an oval, wide across, narrow front to back.
 	_torso.draw_set_transform(Vector2.ZERO, 0.0, Vector2(0.6, 1.0))
@@ -510,3 +615,26 @@ func _draw_torso() -> void:
 	_torso.draw_line(Vector2(2, 0), Vector2(10, 0), accent_color, 3.0)   # visor / arm
 	if has_gun():
 		_torso.draw_rect(Rect2(8, -1.5, 7, 3), weapon.color)   # the gun in hand
+
+
+## One part of the body, from a template sheet: pixel-sharp, outlined,
+## turned so the sheet's "up" points along the part's +x.
+func _make_sprite(texture: Texture2D) -> Sprite2D:
+	var sprite := Sprite2D.new()
+	sprite.texture = texture
+	sprite.hframes = SHEET_COLUMNS
+	sprite.scale = Vector2.ONE * sprite_scale
+	sprite.rotation = PI * 0.5
+	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	var material := ShaderMaterial.new()
+	material.shader = preload("res://shaders/outline.gdshader")
+	sprite.material = material
+	return sprite
+
+
+## The body the gore layer paints when you die: the template's "die" pose.
+func _corpse() -> Dictionary:
+	if body_sheet == null:
+		return {}
+	var region := Rect2(DIE_FRAMES[1] * 64, 0, 64, 64)
+	return {"texture": body_sheet, "region": region, "burst_region": region, "scale": sprite_scale}

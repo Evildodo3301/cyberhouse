@@ -6,6 +6,17 @@
   `assets/characters/cop.png`, `assets/characters/civilian.png`)
   by **E.Vater**, https://evater.itch.io/top-down-style-characters.
   Licence: free for any purpose, including commercial, as long as credit is given.
+- **Top-down character template** (the player: `assets/characters/player_torso.png`,
+  `player_legs.png`, `player_body.png`, recoloured pink and cyan and split into
+  torso and legs) by **comedylife**,
+  https://comedylife.itch.io/top-down-asset-pack-like-hotline-miami.
+  Licence: personal and commercial use, may be modified; credit not required
+  (appreciated); the asset itself may not be resold or redistributed.
+- **Pixel 16 Interiors, free version** (floors and furniture:
+  `assets/levels/interiors.png`) by **zedpxl**,
+  https://zedpxl.itch.io/pixel-16-interiors-topdown-asset-pack.
+  Licence: commercial and non-commercial use, may be modified; no resale or
+  redistribution, even modified; no AI or NFT use. Credit not stated as required.
 
 ## Everything else
 

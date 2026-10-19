@@ -1,7 +1,9 @@
 class_name SwingDoor
 extends Node2D
 ## A swinging door. Walk into it and it bursts open away from you, then
-## swings shut by itself once the doorway is clear. If it swings into someone
+## swings shut by itself once the doorway is clear, wobbling past closed a
+## couple of times like a real saloon-style door. A bullet that hits it
+## knocks it a little way open. If it swings into someone
 ## while it's moving fast, it knocks them down (the classic door-slam move).
 ##
 ## Place this node at the hinge. The door panel points along +X, so rotate
@@ -21,6 +23,12 @@ extends Node2D
 @export var close_speed_degrees: float = 220.0
 ## Seconds the doorway must be empty before the door starts closing.
 @export var close_delay: float = 0.35
+## How springy the swing shut is: higher = snappier. With close_damping it
+## overshoots closed by about a third, then settles.
+@export var close_spring: float = 60.0
+@export var close_damping: float = 5.0
+## How far a bullet knocks it open, in degrees.
+@export var shot_nudge_degrees: float = 22.0
 ## The door only knocks people down while swinging at least this fast.
 @export var knockdown_speed_degrees: float = 400.0
 @export var color: Color = Color(0.95, 0.55, 0.15)   # neon orange
@@ -29,6 +37,11 @@ extends Node2D
 var angle: float = 0.0
 ## Degrees per second this frame (for the knockdown check).
 var swing_speed: float = 0.0
+## Signed degrees per second while it springs shut.
+var _spring_velocity: float = 0.0
+## Opening speed right now: fast for a push, slow for a bullet nudge (so a
+## shot never slams it into anyone).
+var _open_speed: float = 900.0
 
 var _target_angle: float = 0.0
 var _empty_time: float = 0.0
@@ -85,11 +98,17 @@ func _physics_process(delta: float) -> void:
 			# Open AWAY from whoever pushed: find which side they're on.
 			var side := _side_of(pushers[0].global_position)
 			_target_angle = -side * open_angle_degrees
+			_open_speed = open_speed_degrees
 			_already_hit.clear()
+			Game.door_opened.emit(self, pushers[0])
 
 	var opening := absf(_target_angle) > absf(angle)
-	var speed := open_speed_degrees if opening else close_speed_degrees
-	var new_angle := move_toward(angle, _target_angle, speed * delta)
+	var new_angle: float
+	if opening or not is_zero_approx(_target_angle):
+		new_angle = move_toward(angle, _target_angle, _open_speed * delta)
+		_spring_velocity = 0.0
+	else:
+		new_angle = _spring_shut(delta)
 	swing_speed = absf(new_angle - angle) / maxf(delta, 0.0001)
 	var moving_dir := signf(new_angle - angle)
 	angle = new_angle
@@ -97,6 +116,29 @@ func _physics_process(delta: float) -> void:
 	if swing_speed >= knockdown_speed_degrees:
 		_check_knockdowns(moving_dir)
 	queue_redraw()
+
+
+## Swings back toward closed like a spring, so it overshoots and wobbles.
+## Never faster than close_speed_degrees, so closing never knocks anyone down.
+func _spring_shut(delta: float) -> float:
+	_spring_velocity += (-close_spring * angle - close_damping * _spring_velocity) * delta
+	_spring_velocity = clampf(_spring_velocity, -close_speed_degrees, close_speed_degrees)
+	var new_angle := angle + _spring_velocity * delta
+	if absf(new_angle) < 0.5 and absf(_spring_velocity) < 8.0:
+		new_angle = 0.0   # settled
+		_spring_velocity = 0.0
+	return new_angle
+
+
+## A bullet hit it: it swings a little way open, away from the shot, then
+## shuts again. Called by Bullet. `from` is where the shot came from.
+func nudge(from: Vector2) -> void:
+	if absf(angle) >= shot_nudge_degrees:
+		return   # already open wider than a nudge
+	_target_angle = -_side_of(from) * shot_nudge_degrees
+	_open_speed = 250.0
+	_empty_time = 0.0
+	_already_hit.clear()
 
 
 ## +1 or -1 depending on which side of the closed door `pos` is.

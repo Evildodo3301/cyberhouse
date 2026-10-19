@@ -18,6 +18,11 @@ extends CharacterBody2D
 ##   LONG_RANGE  -> "COVER":   hides behind walls while you hold a gun far away.
 ##   BOMB        -> "SCATTER": runs from a landed bomb and keeps apart from others.
 ## Counters never change its speed, reaction time or reach.
+##
+## Doors: when you push open a door of its room, it turns to the door and
+## goes ALERT, even before it can see you. Grunts with stays_in_room (most of
+## them in early levels) never step out of their own room: they chase you to
+## their doorway and wait there.
 
 enum State { PATROL, ALERT, CHASE, ATTACK, SEARCH, KNOCKED_DOWN, DEAD }
 
@@ -41,6 +46,8 @@ enum State { PATROL, ALERT, CHASE, ATTACK, SEARCH, KNOCKED_DOWN, DEAD }
 ## The gun it drops when it dies (it still fights with fists for now).
 ## Empty = drops nothing.
 @export var carried_weapon: WeaponData
+## If on, it never leaves the room it starts in (LevelMap sets this).
+@export var stays_in_room: bool = false
 ## Eye glow used by M3 to show an enemy has adapted. Transparent = none.
 @export var tell_color: Color = Color(0, 0, 0, 0)
 
@@ -69,6 +76,7 @@ var _has_cover: bool = false
 var _cover_timer: float = 0.0
 var _flee_from: Vector2
 var _flee_time: float = 0.0
+var _home_room: int = -1
 
 const SCATTER_TIME := 1.2   # a little longer than the bomb fuse
 const SHEET_COLUMNS := 12
@@ -98,6 +106,10 @@ func _ready() -> void:
 	if not active_counters.is_empty():
 		tell_color = TacticTracker.settings.adapted_eye_color
 	Game.bomb_landed.connect(_on_bomb_landed)
+	Game.door_opened.connect(_on_door_opened)
+	var level := get_tree().get_first_node_in_group("level")
+	if level:
+		_home_room = level.room_at(global_position)
 	_overlay = Node2D.new()
 	_overlay.z_index = 1
 	_overlay.draw.connect(_draw_overlay)
@@ -240,6 +252,24 @@ func _on_noise_made(at: Vector2, loudness: float) -> void:
 		_enter(State.SEARCH)
 
 
+## You pushed open a door of its room: it turns to the door at once and goes
+## ALERT (the "!"), then comes to look. Doors other enemies open are ignored.
+func _on_door_opened(door: Node2D, opener: Node2D) -> void:
+	if not opener.is_in_group("player") or not state in [State.PATROL, State.SEARCH]:
+		return
+	var level := get_tree().get_first_node_in_group("level")
+	if level == null or _home_room < 0:
+		return
+	var door_center: Vector2 = door.center()
+	var across: Vector2 = Vector2.from_angle(door.global_rotation).orthogonal() * 16.0
+	var my_room: int = level.room_at(global_position)
+	if my_room != level.room_at(door_center + across) and my_room != level.room_at(door_center - across):
+		return
+	last_known_position = door_center
+	facing = global_position.direction_to(door_center)
+	_enter(State.ALERT)
+
+
 # --------------------------------------------------------------- behaviour
 
 func _patrol() -> void:
@@ -264,8 +294,8 @@ func _patrol() -> void:
 
 func _search() -> void:
 	if not _arrived and global_position.distance_to(last_known_position) > 6.0 and _state_time < 6.0:
-		_move_to(last_known_position, settings.chase_speed * 0.7)
-		return
+		if _move_to(last_known_position, settings.chase_speed * 0.7):
+			return
 	# At the spot (or it took too long): look around, then go back to the route.
 	_arrived = true
 	velocity = Vector2.ZERO
@@ -295,7 +325,8 @@ func _in_swing(player: Node2D) -> bool:
 
 
 ## Walks toward `target` along the navigation path (around walls, through doors).
-func _move_to(target: Vector2, speed: float) -> void:
+## Returns false if stays_in_room stopped it at the edge of its room.
+func _move_to(target: Vector2, speed: float) -> bool:
 	agent.target_position = target
 	var next := agent.get_next_path_position()
 	if agent.is_navigation_finished() or next.distance_to(global_position) < 0.5:
@@ -303,9 +334,27 @@ func _move_to(target: Vector2, speed: float) -> void:
 	var direction := global_position.direction_to(next)
 	if counters(TacticTracker.BOMB) and state == State.CHASE:
 		direction = _spread_out(direction)
+	if _leaving_room(direction):
+		velocity = Vector2.ZERO
+		facing = global_position.direction_to(target)
+		return false
 	velocity = direction * speed
 	if direction != Vector2.ZERO:
 		facing = direction
+	return true
+
+
+## True if a stay-in-room grunt's next step would take it into a doorway,
+## or within 24 px of one (so it can't hold a door open by standing in its
+## push zone, whichever way it walks up to it).
+func _leaving_room(direction: Vector2) -> bool:
+	if not stays_in_room or _home_room < 0:
+		return false
+	var level := get_tree().get_first_node_in_group("level")
+	if level == null:
+		return false
+	var next := global_position + direction * 4.0
+	return level.leaves_room(_home_room, next) or level.near_doorway(next, 24.0)
 
 
 ## BOMB counter: keeps a gap from other grunts so one bomb can't get them all.
