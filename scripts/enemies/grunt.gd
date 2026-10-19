@@ -7,6 +7,10 @@ extends CharacterBody2D
 ##     |                                    loses you  +---------------+
 ##     +---- gives up ---- SEARCH <-----------------+
 ##
+## Gun enemies (carrying a pistol) also have AIM: when they can see you and
+## you're in range, they stop, turn to you and fire after settings.shot_delay
+## (0.2 s), with no warning. Their bullets fly like yours and walls, doors and
+## furniture stop them. Fists and machete enemies only fight up close.
 ## Plus KNOCKED_DOWN (a door hit it) and DEAD. A bomb going off sends it to
 ## SEARCH toward the noise. One hit kills it; its hit kills you.
 ##
@@ -14,17 +18,25 @@ extends CharacterBody2D
 ## (TacticTracker.get_active_counters()) and switches on a counter for each.
 ## Adapted grunts have glowing eyes and call out the counter they use:
 ##   DOOR_AMBUSH -> "HOLD":    won't walk into a doorway you're waiting at.
-##   RUSH        -> "BACK":    backs away when you run at it (same speed as its chase).
-##   LONG_RANGE  -> "COVER":   hides behind walls while you hold a gun far away.
+##   RUSH        -> "FEINT":   when you run at it, one quick step back, then it
+##                             strikes: lunges at you or side-steps and punches.
+##   LONG_RANGE  -> "COVER":   hides behind a wall for a moment while you hold a
+##                             gun far away, then charges.
 ##   BOMB        -> "SCATTER": runs from a landed bomb and keeps apart from others.
-## Counters never change its speed, reaction time or reach.
+## Counters never change its reaction time or reach, and never make it retreat
+## for long: every back-off ends in an attack. Only the feint's short lunge is
+## faster than its chase.
 ##
 ## Doors: when you push open a door of its room, it turns to the door and
 ## goes ALERT, even before it can see you. Grunts with stays_in_room (most of
 ## them in early levels) never step out of their own room: they chase you to
 ## their doorway and wait there.
 
-enum State { PATROL, ALERT, CHASE, ATTACK, SEARCH, KNOCKED_DOWN, DEAD }
+const BULLET_SCENE := preload("res://scenes/weapons/bullet.tscn")
+## Screen pixels inside the edge a gun enemy must be before it may fire.
+const SCREEN_MARGIN := 12.0
+
+enum State { PATROL, ALERT, CHASE, ATTACK, SEARCH, KNOCKED_DOWN, DEAD, AIM }
 
 ## All the tuning numbers. Edit res://data/grunt_settings.tres to change them.
 @export var settings: EnemySettings
@@ -43,8 +55,8 @@ enum State { PATROL, ALERT, CHASE, ATTACK, SEARCH, KNOCKED_DOWN, DEAD }
 @export var sprite_scale: float = 0.6
 ## Room pixels walked per walk-cycle frame.
 @export var stride_per_frame: float = 4.0
-## The gun it drops when it dies (it still fights with fists for now).
-## Empty = drops nothing.
+## What it holds and drops when it dies. A gun (the pistol) means it shoots
+## you; a machete or nothing means it fights up close. Empty = drops nothing.
 @export var carried_weapon: WeaponData
 ## If on, it never leaves the room it starts in (LevelMap sets this).
 @export var stays_in_room: bool = false
@@ -74,6 +86,16 @@ var _bark_time: float = 0.0
 var _cover_point: Vector2
 var _has_cover: bool = false
 var _cover_timer: float = 0.0
+## How long it has hidden this time, and the wait before it may hide again.
+var _cover_spent: float = 0.0
+var _cover_rest: float = 0.0
+## RUSH feint: 0 = none, 1 = stepping back, 2 = striking.
+var _feint_phase: int = 0
+var _feint_left: float = 0.0
+var _feint_cooldown: float = 0.0
+var _feint_side: float = 0.0   # 0 = straight lunge, -1/+1 = side-step that way
+## Seconds the muzzle flash still shows after a shot.
+var _muzzle_time: float = 0.0
 var _flee_from: Vector2
 var _flee_time: float = 0.0
 var _home_room: int = -1
@@ -149,6 +171,9 @@ func _physics_process(delta: float) -> void:
 	else:
 		_unseen_time += delta
 	_bark_time = maxf(_bark_time - delta, 0.0)
+	_feint_cooldown = maxf(_feint_cooldown - delta, 0.0)
+	_muzzle_time = maxf(_muzzle_time - delta, 0.0)
+	_cover_rest = maxf(_cover_rest - delta, 0.0)
 
 	if _flee_time > 0.0 and state != State.KNOCKED_DOWN:
 		_scatter(delta)
@@ -176,10 +201,16 @@ func _physics_process(delta: float) -> void:
 				_enter(State.ATTACK)
 			elif _unseen_time >= settings.lose_sight_time:
 				_enter(State.SEARCH)
-			elif not _counter_move(player, sees, delta):
+			elif _counter_move(player, sees, delta):
+				pass
+			elif sees and _can_shoot(player):
+				_enter(State.AIM)
+			else:
 				_move_to(last_known_position, settings.chase_speed)
 		State.ATTACK:
 			_attack(player)
+		State.AIM:
+			_aim(player)
 		State.SEARCH:
 			if not _hold_at_door(player):
 				_search()
@@ -198,9 +229,12 @@ func _physics_process(delta: float) -> void:
 func _enter(new_state: State) -> void:
 	state = new_state
 	_state_time = 0.0
+	if _feint_phase != 0:   # any change of plan ends the feint
+		_feint_phase = 0
+		_feint_cooldown = settings.feint_cooldown
 	_arrived = false
 	_look_time = 0.0
-	if new_state == State.ATTACK:
+	if new_state in [State.ATTACK, State.AIM]:
 		_struck = false
 		_attack_direction = global_position.direction_to(last_known_position)
 		facing = _attack_direction
@@ -242,7 +276,7 @@ func _can_see(player: Node2D) -> bool:
 
 
 func _on_noise_made(at: Vector2, loudness: float) -> void:
-	if state in [State.DEAD, State.ATTACK, State.KNOCKED_DOWN]:
+	if state in [State.DEAD, State.ATTACK, State.AIM, State.KNOCKED_DOWN]:
 		return
 	if global_position.distance_to(at) > settings.hearing_range * loudness:
 		return
@@ -314,6 +348,51 @@ func _attack(player: Node2D) -> void:
 		if player and _in_swing(player):
 			player.take_hit(self, _attack_direction, "grunt_melee")
 	if _state_time >= settings.attack_windup + settings.attack_recovery:
+		_enter(State.CHASE)
+
+
+## Gun enemies: in range, and nothing (wall, door, furniture) in the way.
+func has_gun() -> bool:
+	return carried_weapon != null and carried_weapon.kind == WeaponData.Kind.GUN
+
+
+func _can_shoot(player: Node2D) -> bool:
+	if not has_gun() or player == null:
+		return false
+	if global_position.distance_to(player.global_position) > carried_weapon.reach:
+		return false
+	if not on_screen():
+		return false
+	var ray := PhysicsRayQueryParameters2D.create(global_position, player.global_position, 1 | 16)
+	return get_world_2d().direct_space_state.intersect_ray(ray).is_empty()
+
+
+## True when you can see it on the screen (a little inside the edge). Gun
+## enemies only fire from there: that and shot_delay are your only warning.
+func on_screen() -> bool:
+	var view := get_viewport().get_visible_rect().grow(-SCREEN_MARGIN)
+	return view.has_point(get_viewport().get_canvas_transform() * global_position)
+
+
+## Stands still and turns to you, then fires one bullet after shot_delay.
+## It keeps turning until it fires: the delay is your only chance.
+func _aim(player: Node2D) -> void:
+	velocity = Vector2.ZERO
+	if not _struck:
+		if player and player.is_alive():
+			_attack_direction = global_position.direction_to(player.global_position)
+		facing = _attack_direction
+		if _state_time >= settings.shot_delay and not on_screen():
+			_enter(State.CHASE)   # it slipped off screen: no shot
+			return
+		if _state_time >= settings.shot_delay:
+			_struck = true
+			_muzzle_time = 0.06
+			var bullet: Bullet = BULLET_SCENE.instantiate()
+			get_parent().add_child(bullet)
+			bullet.fire(global_position + _attack_direction * 8.0, _attack_direction, carried_weapon, self)
+			bullet.weapon_id = "grunt_gun"
+	elif _state_time >= settings.shot_delay + settings.shot_recovery:
 		_enter(State.CHASE)
 
 
@@ -441,7 +520,7 @@ func _near_door() -> bool:
 func _counter_move(player: Node2D, sees: bool, delta: float) -> bool:
 	if _hold_at_door(player):
 		return true
-	if counters(TacticTracker.RUSH) and sees and _back_off(player):
+	if counters(TacticTracker.RUSH) and sees and _feint(player, delta):
 		return true
 	if counters(TacticTracker.LONG_RANGE) and _take_cover(player, delta):
 		return true
@@ -474,28 +553,58 @@ func _hold_at_door(player: Node2D) -> bool:
 	return false
 
 
-## RUSH: when you run straight at it, it backs away, still facing you.
-## It only moves at its normal chase speed. Beat it: gun, bomb, or pin it to a wall.
-func _back_off(player: Node2D) -> bool:
-	var away := global_position - player.global_position
-	if away.length() > 64.0:
+## RUSH: a feint, never a retreat. When you run straight at it, it takes one
+## quick step back (still facing you), then strikes: a short lunge straight at
+## you, or a side-step round your swing and a punch. Its usual wind-up before
+## the hit stays, so you can still react. Then no feint for a while.
+func _feint(player: Node2D, delta: float) -> bool:
+	var to_player := player.global_position - global_position
+	if _feint_phase == 0:
+		if _feint_cooldown > 0.0 or to_player.length() > 64.0:
+			return false
+		if player.velocity.dot(-to_player.normalized()) < 40.0:
+			return false   # you aren't running at it
+		_feint_phase = 1
+		_feint_left = settings.feint_back_time
+		_feint_side = [0.0, -1.0, 1.0][randi() % 3]
+	_feint_left -= delta
+	facing = to_player.normalized()
+	if _feint_phase == 1:
+		velocity = -to_player.normalized() * settings.chase_speed
+		_bark("FEINT")
+		if _feint_left <= 0.0:
+			if _can_shoot(player):
+				_enter(State.AIM)   # a gun enemy steps back, then shoots
+				return true
+			_feint_phase = 2
+			_feint_left = settings.feint_strike_time
+		return true
+	# Strike: lunge in, curving to one side if it's side-stepping.
+	var lunge := to_player.normalized()
+	if _feint_side != 0.0:
+		lunge = (lunge + lunge.orthogonal() * _feint_side * 0.9).normalized()
+	velocity = lunge * settings.chase_speed * settings.feint_lunge_speed
+	if _feint_left <= 0.0:
+		_feint_phase = 0
+		_feint_cooldown = settings.feint_cooldown
 		return false
-	var closing: float = player.velocity.dot(away.normalized())
-	if closing < 40.0:
-		return false
-	velocity = away.normalized() * settings.chase_speed
-	facing = -away.normalized()
-	_bark("BACK")
 	return true
 
 
-## LONG_RANGE: while you hold a gun and stand far away, it hides behind the
-## nearest wall and waits. Beat it: get close, or drop the gun and use fists.
+## LONG_RANGE: while you hold a gun and stand far away, it ducks behind the
+## nearest wall, but only for cover_max_time: then it charges you anyway.
+## Beat it: get close, wait for the charge, or use fists.
 func _take_cover(player: Node2D, delta: float) -> bool:
-	if player == null or not player.has_gun():
+	if player == null or not player.has_gun() or _cover_rest > 0.0:
 		return false
 	if global_position.distance_to(player.global_position) <= 64.0:
 		return false   # you're close now: charge
+	_cover_spent += delta
+	if _cover_spent >= settings.cover_max_time:
+		_cover_spent = 0.0
+		_cover_rest = settings.cover_cooldown
+		_bark("GO")
+		return false
 	_cover_timer -= delta
 	if _cover_timer <= 0.0:
 		_cover_timer = 0.5
@@ -600,7 +709,7 @@ func _draw() -> void:
 		var cone := PackedVector2Array([Vector2.ZERO])
 		for i in 9:
 			cone.append(Vector2.from_angle(angle - half + 2.0 * half * i / 8.0) * settings.vision_range)
-		var alert := state in [State.ALERT, State.CHASE, State.ATTACK]
+		var alert := state in [State.ALERT, State.CHASE, State.ATTACK, State.AIM]
 		draw_colored_polygon(cone, Color(1, 0.2, 0.2, 0.07) if alert else Color(1, 1, 1, 0.04))
 	if _sprite:
 		return   # the sprite shows the body
@@ -624,6 +733,8 @@ func _draw_overlay() -> void:
 		# The gun it will drop, held at its side.
 		var hand := facing.orthogonal() * 5.0 + facing * 6.0
 		o.draw_line(hand, hand + facing * 6.0, carried_weapon.color, 2.5)
+	if _muzzle_time > 0.0:
+		o.draw_circle(facing * 14.0, 3.0, Color(1, 0.95, 0.6))
 	if tell_color.a > 0.0:
 		# Glowing eyes: this grunt has learned your moves.
 		var eyes := facing * 3.0

@@ -46,6 +46,27 @@ extends Resource
 ## Width of its swing, in degrees.
 @export var attack_arc_degrees: float = 100.0
 
+@export_group("Gun")
+## Seconds between a gun enemy turning to you and firing. No warning is shown:
+## this is all the time you get to react (Fianso: "few milliseconds").
+@export var shot_delay: float = 0.2
+## Pause after each shot before it can shoot again.
+@export var shot_recovery: float = 0.6
+
+@export_group("Learned counters")
+## RUSH counter: when you run at it, it steps back this long (one step)...
+@export var feint_back_time: float = 0.25
+## ...then strikes for up to this long: a lunge at you or a side-step and a punch.
+@export var feint_strike_time: float = 0.4
+## Speed of that lunge, times chase_speed. Short, so it's a surprise, not a chase.
+@export var feint_lunge_speed: float = 1.35
+## Seconds before it can feint again. It never backs off over and over.
+@export var feint_cooldown: float = 2.5
+## LONG_RANGE counter: longest it hides behind cover before it charges you...
+@export var cover_max_time: float = 1.5
+## ...and how long before it will hide again.
+@export var cover_cooldown: float = 3.0
+
 @export_group("Doors")
 ## Seconds it stays down after a door slams into it.
 @export var knockdown_time: float = 1.5

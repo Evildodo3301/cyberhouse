@@ -52,11 +52,15 @@ func _physics_process(delta: float) -> void:
 		queue_free()
 
 
+## Enemy bullets hit the player and fly past other enemies (no friendly fire);
+## the player's bullets hit enemies and dummies.
 func _first_target(from: Vector2, to: Vector2) -> Node2D:
 	var length := from.distance_to(to)
 	var best: Node2D = null
 	var best_along := INF
-	for node in get_tree().get_nodes_in_group("targets"):
+	var enemy_shot := shooter != null and shooter.is_in_group("enemies")
+	var group := "player" if enemy_shot else "targets"
+	for node in get_tree().get_nodes_in_group(group):
 		var target := node as Node2D
 		if target == null or target == shooter or not target.is_alive():
 			continue

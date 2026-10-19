@@ -1,4 +1,4 @@
-[gd_scene load_steps=12 format=3]
+[gd_scene load_steps=13 format=3]
 
 [ext_resource type="Script" path="res://scripts/levels/main.gd" id="1_main"]
 [ext_resource type="Script" path="res://scripts/levels/test_arena.gd" id="2_arena"]
@@ -11,6 +11,7 @@
 [ext_resource type="PackedScene" path="res://scenes/props/swing_door.tscn" id="9_door"]
 [ext_resource type="PackedScene" path="res://scenes/enemies/grunt.tscn" id="10_grunt"]
 [ext_resource type="PackedScene" path="res://scenes/weapons/weapon_pickup.tscn" id="11_pickup"]
+[ext_resource type="Resource" path="res://data/weapons/machete.tres" id="12_machete"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("1_main")
@@ -41,10 +42,12 @@ rotation = 1.5707964
 [node name="GruntPatrol" parent="." instance=ExtResource("10_grunt")]
 position = Vector2(360, 40)
 patrol_points = Array[Vector2]([Vector2(450, 40), Vector2(450, 150), Vector2(330, 145), Vector2(360, 40)])
+carried_weapon = ExtResource("12_machete")
 
 [node name="GruntGuard" parent="." instance=ExtResource("10_grunt")]
 position = Vector2(440, 270)
 start_facing_degrees = 200.0
+carried_weapon = ExtResource("12_machete")
 
 [node name="Player" parent="." instance=ExtResource("3_player")]
 position = Vector2(240, 260)

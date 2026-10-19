@@ -10,9 +10,10 @@ extends Node2D
 ##      (a straight run of D's or o's in a wall = one doorway)
 ##   P  player start      g  pistol on the floor
 ##   m  machete on the floor
-##   C  cop grunt (drops a pistol)        M  cop grunt (drops a machete)
-##   V  civilian grunt (looks like a cop for now, so the player is the
-##      only one in pink; drops a pistol)
+##   C  cop grunt with a pistol: shoots you, drops the pistol
+##   M  cop grunt with a machete (drops it)    F  cop grunt, fists only
+##   V  civilian grunt with a pistol (looks like a cop for now, so the
+##      player is the only one in pink; shoots, drops the pistol)
 ##   E  exit (opens once every enemy is dead)
 ##
 ## Rooms are worked out automatically: floor areas separated by walls and
@@ -275,7 +276,7 @@ func _build_doorways() -> void:
 
 
 func _spawn_things() -> void:
-	var count := {"C": 0, "V": 0, "M": 0, "g": 0, "m": 0}
+	var count := {"C": 0, "V": 0, "M": 0, "F": 0, "g": 0, "m": 0}
 	for at in _floor_tiles:
 		var letter := tile(at)
 		var spot := _tile_center(at)
@@ -286,15 +287,17 @@ func _spawn_things() -> void:
 					player = get_parent().get_node_or_null("Player")
 				if player:
 					player.global_position = spot
-			"C", "V", "M":
+			"C", "V", "M", "F":
 				count[letter] += 1
 				var grunt: Node2D = GRUNT_SCENE.instantiate()
-				grunt.name = {"C": "Cop%d", "V": "Civilian%d", "M": "Thug%d"}[letter] % count[letter]
+				grunt.name = {"C": "Cop%d", "V": "Civilian%d", "M": "Thug%d", "F": "Brawler%d"}[letter] % count[letter]
 				grunt.position = spot
 				if letter == "M":
 					grunt.carried_weapon = MACHETE
+				elif letter == "F":
+					grunt.carried_weapon = null   # fists only, drops nothing
 				# Every 1/roam_chance-th enemy (in map order) is a roamer.
-				var index: int = count["C"] + count["V"] + count["M"]
+				var index: int = count["C"] + count["V"] + count["M"] + count["F"]
 				grunt.stays_in_room = floori(index * roam_chance) == floori((index - 1) * roam_chance)
 				grunt.start_facing_degrees = rad_to_deg(spot.angle_to_point(_room_center(at)))
 				add_child(grunt)

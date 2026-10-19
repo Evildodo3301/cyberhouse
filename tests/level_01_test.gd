@@ -57,6 +57,7 @@ func _initialize() -> void:
 	check(enemies.all(func(e): return e.sheet.resource_path.ends_with("cop.png")), "every enemy looks like a cop")
 	var thugs := enemies.filter(func(e): return e.carried_weapon and e.carried_weapon.id == &"machete")
 	check(thugs.size() == 4, "4 enemies carry a machete")
+	check(enemies.filter(func(e): return e.has_gun()).size() == 4, "4 of the 12 enemies have guns and shoot")
 	var roamers := enemies.filter(func(e): return not e.stays_in_room)
 	print("      roamers: ", roamers.map(func(e): return e.name))
 	check(roamers.size() >= 1 and roamers.size() <= 3, "only a few enemies may leave their room (%d of 12)" % roamers.size())

@@ -445,23 +445,34 @@ func _initialize() -> void:
 	guard = main.get_node("GruntGuard")
 	check(guard.tell_color.a > 0.0 and guard.counters(&"RUSH"), "adapted grunts have glowing eyes")
 
-	# 23. RUSH counter: run at it and it backs off at its normal speed.
+	# 23. RUSH counter: run at it and it feints (one quick step back), then strikes.
 	player = main.get_node("Player")
 	main.get_node("GruntPatrol").free()
 	player.global_position = guard.global_position + Vector2(-70, 0)
 	await wait_frames(20)   # it notices you and starts to come
 	touch(0, Vector2(100, 250), true)
 	drag(0, Vector2(140, 250))
-	var backed := false
+	var feinted := false
+	var struck_back := false
+	var backing_frames := 0
 	var fastest := 0.0
-	for i in 40:
+	for i in 60:
 		await wait_frames(1)
+		if not player.is_alive():
+			break
 		fastest = maxf(fastest, guard.velocity.length())
-		if guard._bark_text == "BACK" and guard.velocity.x > 0.0:
-			backed = true
+		var away: bool = guard.velocity.dot(guard.global_position - player.global_position) > 0.0
+		if guard._bark_text == "FEINT" and away:
+			feinted = true
+		if away:
+			backing_frames += 1
+		if feinted and (guard.state == 3 or guard._feint_phase == 2):   # ATTACK, or lunging in
+			struck_back = true
 	touch(0, Vector2(140, 250), false)
-	check(backed, "rushed grunt backs away, calling BACK")
-	check(fastest <= guard.settings.chase_speed + 0.5, "learning never makes it faster")
+	check(feinted, "rushed grunt feints: a quick step back, calling FEINT")
+	check(struck_back, "after the feint it strikes instead of backing off")
+	check(backing_frames <= 20, "it never backs off for long (%d frames)" % backing_frames)
+	check(fastest <= guard.settings.chase_speed * guard.settings.feint_lunge_speed + 0.5, "only the short lunge is faster than its chase")
 
 	# 24. DOOR_AMBUSH counter: wait beside the door and it won't come through.
 	tracker.clear_room(room)
@@ -500,6 +511,13 @@ func _initialize() -> void:
 			hid = true
 			break
 	check(hid, "gun at range: the grunt takes cover out of your line of fire (COVER)")
+	var charged := false
+	for i in 150:
+		await wait_frames(1)
+		if guard._bark_text == "GO" and guard.velocity.dot(player.global_position - guard.global_position) > 0.0:
+			charged = true
+			break
+	check(charged, "it hides only for a moment, then charges you")
 
 	# 26. BOMB counter: it runs from a landed bomb and survives it.
 	tracker.blocked_by_room[room] = [&"BOMB"]
@@ -515,6 +533,103 @@ func _initialize() -> void:
 	check(guard._flee_time > 0.0, "a bomb lands near it: it scatters")
 	await wait_frames(70)
 	check(guard.is_alive(), "and it survives the blast")
+	tracker.clear_room(room)
+
+	# 27. Gun enemies shoot back: no warning, just a 0.2 s delay.
+	await reload_room(true)
+	main = current_scene
+	player = main.get_node("Player")
+	main.get_node("GruntPatrol").free()
+	guard = main.get_node("GruntGuard")
+	guard.carried_weapon = load("res://data/weapons/pistol.tres")
+	player.global_position = guard.global_position + Vector2(-60, 0)
+	var aim_frame := -1
+	var shot_frame := -1
+	for i in 90:
+		await wait_frames(1)
+		if aim_frame < 0 and guard.state == 7:
+			aim_frame = i
+		if shot_frame < 0 and guard._struck and guard.state == 7:
+			shot_frame = i
+		if not player.is_alive():
+			break
+	check(aim_frame >= 0, "a gun enemy in range stops and aims at you")
+	var delay := (shot_frame - aim_frame) / 60.0
+	check(shot_frame > aim_frame and delay >= 0.15 and delay <= 0.25, "it fires after about 0.2 s (%.2f s)" % delay)
+	check(not player.is_alive(), "its bullet kills you")
+	var gun_deaths: Array = tracker.get_attempt_reports(tracker.current_attempt()).filter(
+		func(e): return e.get("type") == "player_death" and e.get("killer_type") == "enemy_gun")
+	check(gun_deaths.size() == 1, "the death is logged as a gun kill")
+
+	# 28. Off screen it never fires.
+	await reload_room(true)
+	main = current_scene
+	player = main.get_node("Player")
+	main.get_node("GruntPatrol").free()
+	guard = main.get_node("GruntGuard")
+	guard.carried_weapon = load("res://data/weapons/pistol.tres")
+	# Headless the screen is square (640x640): zoom in so 66 px is past its edge.
+	main.get_node("GameCamera").zoom = Vector2(6, 6)
+	player.global_position = guard.global_position + Vector2(0, -66)   # in range, past the screen's top edge
+	await wait_frames(3)
+	var fired := false
+	for i in 40:
+		await wait_frames(1)
+		guard.global_position = player.global_position + Vector2(0, 66)   # hold it there
+		if guard._struck and guard.state == 7:
+			fired = true
+	check(not guard.on_screen() and not fired and player.is_alive(), "an enemy off screen doesn't shoot")
+
+	# 29. Learned counters with a gun enemy: FEINT ends in a shot.
+	tracker.clear_room(room)
+	tracker.blocked_by_room[room] = [&"RUSH"]
+	await reload_room(true)
+	main = current_scene
+	player = main.get_node("Player")
+	main.get_node("GruntPatrol").free()
+	guard = main.get_node("GruntGuard")
+	guard.carried_weapon = load("res://data/weapons/pistol.tres")
+	player.global_position = guard.global_position + Vector2(-70, 0)
+	player.velocity = Vector2(96, 0)
+	touch(0, Vector2(100, 250), true)
+	drag(0, Vector2(140, 250))
+	var feint_then_aim := false
+	var saw_feint := false
+	for i in 60:
+		await wait_frames(1)
+		if guard._bark_text == "FEINT":
+			saw_feint = true
+		if saw_feint and guard.state == 7:
+			feint_then_aim = true
+			break
+		if not player.is_alive():
+			break
+	touch(0, Vector2(140, 250), false)
+	check(feint_then_aim, "a rushed gun enemy feints, then shoots")
+
+	# 30. COVER with a gun enemy: it hides for a moment, then comes out shooting.
+	tracker.blocked_by_room[room] = [&"LONG_RANGE"]
+	await reload_room(true)
+	main = current_scene
+	player = main.get_node("Player")
+	main.get_node("GruntPatrol").free()
+	guard = main.get_node("GruntGuard")
+	guard.carried_weapon = load("res://data/weapons/pistol.tres")
+	player.equip(load("res://data/weapons/pistol.tres"), -1)
+	player.global_position = Vector2(364, 150)
+	var covered := false
+	var came_out := false
+	for i in 300:
+		await wait_frames(1)
+		if guard._bark_text == "COVER":
+			covered = true
+		if covered and guard.state == 7:
+			came_out = true
+			break
+		if not player.is_alive():
+			came_out = covered
+			break
+	check(covered and came_out, "a gun enemy hides (COVER), then comes out shooting")
 	tracker.clear_room(room)
 
 	print("\n%s (%d failure(s))" % ["ALL PASSED" if failures == 0 else "SOME FAILED", failures])
