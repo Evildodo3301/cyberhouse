@@ -24,8 +24,8 @@ extends CharacterBody2D
 ##                             gun far away, then charges.
 ##   BOMB        -> "SCATTER": runs from a landed bomb and keeps apart from others.
 ## Counters never change its reaction time or reach, and never make it retreat
-## for long: every back-off ends in an attack. Only the feint's short lunge is
-## faster than its chase.
+## for long: every back-off ends in an attack. Only short bursts are faster
+## than its chase: the feint's lunge and the charge when it closes in.
 ##
 ## Doors: when you push open a door of its room, it turns to the door and
 ## goes ALERT, even before it can see you. Grunts with stays_in_room (most of
@@ -94,6 +94,9 @@ var _feint_phase: int = 0
 var _feint_left: float = 0.0
 var _feint_cooldown: float = 0.0
 var _feint_side: float = 0.0   # 0 = straight lunge, -1/+1 = side-step that way
+## Charge burst: seconds left at charge speed, and the wait before the next.
+var _charge_left: float = 0.0
+var _charge_rest: float = 0.0
 ## Seconds the muzzle flash still shows after a shot.
 var _muzzle_time: float = 0.0
 var _flee_from: Vector2
@@ -173,6 +176,8 @@ func _physics_process(delta: float) -> void:
 	_bark_time = maxf(_bark_time - delta, 0.0)
 	_feint_cooldown = maxf(_feint_cooldown - delta, 0.0)
 	_muzzle_time = maxf(_muzzle_time - delta, 0.0)
+	_charge_left = maxf(_charge_left - delta, 0.0)
+	_charge_rest = maxf(_charge_rest - delta, 0.0)
 	_cover_rest = maxf(_cover_rest - delta, 0.0)
 
 	if _flee_time > 0.0 and state != State.KNOCKED_DOWN:
@@ -206,7 +211,7 @@ func _physics_process(delta: float) -> void:
 			elif sees and _can_shoot(player):
 				_enter(State.AIM)
 			else:
-				_move_to(last_known_position, settings.chase_speed)
+				_move_to(last_known_position, _chase_speed(player, sees))
 		State.ATTACK:
 			_attack(player)
 		State.AIM:
@@ -349,6 +354,21 @@ func _attack(player: Node2D) -> void:
 			player.take_hit(self, _attack_direction, "grunt_melee")
 	if _state_time >= settings.attack_windup + settings.attack_recovery:
 		_enter(State.CHASE)
+
+
+## Normal chase speed, or a short burst when it closes in to attack: a
+## melee enemy within charge_range of you speeds up for charge_time.
+## (The 0.2 s reaction pause in ALERT always comes first.)
+func _chase_speed(player: Node2D, sees: bool) -> float:
+	if _charge_left <= 0.0 and _charge_rest <= 0.0 and sees and not has_gun() \
+			and global_position.distance_to(player.global_position) <= settings.charge_range:
+		_start_charge()
+	return settings.chase_speed * (settings.charge_speed if _charge_left > 0.0 else 1.0)
+
+
+func _start_charge() -> void:
+	_charge_left = settings.charge_time
+	_charge_rest = settings.charge_time + settings.charge_cooldown
 
 
 ## Gun enemies: in range, and nothing (wall, door, furniture) in the way.
@@ -604,6 +624,7 @@ func _take_cover(player: Node2D, delta: float) -> bool:
 		_cover_spent = 0.0
 		_cover_rest = settings.cover_cooldown
 		_bark("GO")
+		_start_charge()   # out of cover at a sprint
 		return false
 	_cover_timer -= delta
 	if _cover_timer <= 0.0:
