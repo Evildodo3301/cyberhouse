@@ -445,23 +445,34 @@ func _initialize() -> void:
 	guard = main.get_node("GruntGuard")
 	check(guard.tell_color.a > 0.0 and guard.counters(&"RUSH"), "adapted grunts have glowing eyes")
 
-	# 23. RUSH counter: run at it and it backs off at its normal speed.
+	# 23. RUSH counter: run at it and it feints (one quick step back), then strikes.
 	player = main.get_node("Player")
 	main.get_node("GruntPatrol").free()
 	player.global_position = guard.global_position + Vector2(-70, 0)
 	await wait_frames(20)   # it notices you and starts to come
 	touch(0, Vector2(100, 250), true)
 	drag(0, Vector2(140, 250))
-	var backed := false
+	var feinted := false
+	var struck_back := false
+	var backing_frames := 0
 	var fastest := 0.0
-	for i in 40:
+	for i in 60:
 		await wait_frames(1)
+		if not player.is_alive():
+			break
 		fastest = maxf(fastest, guard.velocity.length())
-		if guard._bark_text == "BACK" and guard.velocity.x > 0.0:
-			backed = true
+		var away: bool = guard.velocity.dot(guard.global_position - player.global_position) > 0.0
+		if guard._bark_text == "FEINT" and away:
+			feinted = true
+		if away:
+			backing_frames += 1
+		if feinted and (guard.state == 3 or guard._feint_phase == 2):   # ATTACK, or lunging in
+			struck_back = true
 	touch(0, Vector2(140, 250), false)
-	check(backed, "rushed grunt backs away, calling BACK")
-	check(fastest <= guard.settings.chase_speed + 0.5, "learning never makes it faster")
+	check(feinted, "rushed grunt feints: a quick step back, calling FEINT")
+	check(struck_back, "after the feint it strikes instead of backing off")
+	check(backing_frames <= 20, "it never backs off for long (%d frames)" % backing_frames)
+	check(fastest <= guard.settings.chase_speed * guard.settings.feint_lunge_speed + 0.5, "only the short lunge is faster than its chase")
 
 	# 24. DOOR_AMBUSH counter: wait beside the door and it won't come through.
 	tracker.clear_room(room)
@@ -500,6 +511,13 @@ func _initialize() -> void:
 			hid = true
 			break
 	check(hid, "gun at range: the grunt takes cover out of your line of fire (COVER)")
+	var charged := false
+	for i in 150:
+		await wait_frames(1)
+		if guard._bark_text == "GO" and guard.velocity.dot(player.global_position - guard.global_position) > 0.0:
+			charged = true
+			break
+	check(charged, "it hides only for a moment, then charges you")
 
 	# 26. BOMB counter: it runs from a landed bomb and survives it.
 	tracker.blocked_by_room[room] = [&"BOMB"]
