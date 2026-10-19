@@ -445,6 +445,33 @@ func _initialize() -> void:
 	guard = main.get_node("GruntGuard")
 	check(guard.tell_color.a > 0.0 and guard.counters(&"RUSH"), "adapted grunts have glowing eyes")
 
+	# 22b. Running into it without swinging still counts as a rush (the bump
+	# stops you dead just before its hit, which used to hide the rush).
+	tracker.clear_room(room)
+	await reload_room(true)
+	main = current_scene
+	player = main.get_node("Player")
+	main.get_node("GruntPatrol").free()
+	guard = main.get_node("GruntGuard")
+	player.global_position = guard.global_position + Vector2(-100, 0)
+	player.velocity = Vector2(96, 0)
+	for i in 150:   # keep steering straight at it, as a thumb would
+		var dir: Vector2 = player.global_position.direction_to(guard.global_position).rotated(-player.view_rotation)
+		Input.action_release("move_left")
+		Input.action_release("move_up")
+		Input.action_release("move_down")
+		Input.action_press("move_right", maxf(dir.x, 0.0))
+		Input.action_press("move_down" if dir.y > 0.0 else "move_up", absf(dir.y))
+		await wait_frames(1)
+		if not player.is_alive():
+			break
+	for a in ["move_left", "move_right", "move_up", "move_down"]:
+		Input.action_release(a)
+	check(not player.is_alive() and tracker.get_active_counters().has(&"RUSH"), "dying after running into it blocks RUSH")
+	await reload_room(true)
+	main = current_scene
+	guard = main.get_node("GruntGuard")
+
 	# 23. RUSH counter: run at it and it feints (one quick step back), then strikes.
 	player = main.get_node("Player")
 	main.get_node("GruntPatrol").free()
@@ -472,7 +499,7 @@ func _initialize() -> void:
 	check(feinted, "rushed grunt feints: a quick step back, calling FEINT")
 	check(struck_back, "after the feint it strikes instead of backing off")
 	check(backing_frames <= 20, "it never backs off for long (%d frames)" % backing_frames)
-	check(fastest <= guard.settings.chase_speed * guard.settings.feint_lunge_speed + 0.5, "only the short lunge is faster than its chase")
+	check(fastest <= guard.settings.chase_speed * maxf(guard.settings.feint_lunge_speed, guard.settings.charge_speed) + 0.5, "only the short bursts are faster than its chase")
 
 	# 24. DOOR_AMBUSH counter: wait beside the door and it won't come through.
 	tracker.clear_room(room)
@@ -534,6 +561,29 @@ func _initialize() -> void:
 	await wait_frames(70)
 	check(guard.is_alive(), "and it survives the blast")
 	tracker.clear_room(room)
+
+	# 26b. Closing in to attack, a melee enemy bursts toward you, then slows again.
+	await reload_room(true)
+	main = current_scene
+	player = main.get_node("Player")
+	main.get_node("GruntPatrol").free()
+	guard = main.get_node("GruntGuard")
+	player.global_position = guard.global_position + Vector2(-110, 0)
+	var far_speed := 0.0
+	var burst_speed := 0.0
+	for i in 90:
+		await wait_frames(1)
+		if guard.state != 2:
+			continue
+		var d: float = guard.global_position.distance_to(player.global_position)
+		if d > guard.settings.charge_range + 10.0:
+			far_speed = maxf(far_speed, guard.velocity.length())
+		else:
+			burst_speed = maxf(burst_speed, guard.velocity.length())
+		if guard.state == 3 or not player.is_alive():
+			break
+	check(far_speed <= guard.settings.chase_speed + 0.5, "from far away it runs at its normal speed (%.0f)" % far_speed)
+	check(burst_speed >= guard.settings.chase_speed * guard.settings.charge_speed - 1.0, "close in, it bursts at you to attack (%.0f)" % burst_speed)
 
 	# 27. Gun enemies shoot back: no warning, just a 0.2 s delay.
 	await reload_room(true)

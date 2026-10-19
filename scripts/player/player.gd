@@ -73,6 +73,12 @@ var _alive: bool = true
 var _last_attack: String = ""
 var _last_attack_ms: int = -1
 var _speed_before_death: float = 0.0
+## Your top speed over the last half second. Running into an enemy stops you
+## dead before its hit lands, so the death report reads this instead of the
+## speed at the very moment you died (else rushing deaths weren't spotted).
+var _recent_speed: float = 0.0
+var _recent_speed_age: float = 0.0
+const RECENT_SPEED_WINDOW := 0.5
 
 # The attack goes through three steps: READY -> WINDUP -> RECOVERY -> READY.
 enum AttackState { READY, WINDUP, RECOVERY }
@@ -169,6 +175,10 @@ func _update_movement(delta: float) -> void:
 	else:
 		var decel := settings.move_speed / maxf(settings.stop_time, 0.001)
 		velocity = velocity.move_toward(Vector2.ZERO, decel * delta)
+	_recent_speed_age += delta
+	if velocity.length() >= _recent_speed or _recent_speed_age > RECENT_SPEED_WINDOW:
+		_recent_speed = velocity.length()
+		_recent_speed_age = 0.0
 	move_and_slide()   # moves the body and stops it at walls
 
 
@@ -508,7 +518,7 @@ func take_hit(attacker: Node2D, direction: Vector2, weapon: String) -> void:
 	if not _alive:
 		return
 	_alive = false
-	_speed_before_death = velocity.length()
+	_speed_before_death = maxf(velocity.length(), _recent_speed)
 	velocity = Vector2.ZERO
 	_report_death(attacker, weapon)
 	var gore := get_tree().get_first_node_in_group("gore")

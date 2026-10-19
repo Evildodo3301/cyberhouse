@@ -46,6 +46,16 @@ extends Resource
 ## Width of its swing, in degrees.
 @export var attack_arc_degrees: float = 100.0
 
+@export_group("Charge")
+## Close enough (px) and it bursts toward you to attack (melee enemies, and
+## any enemy coming out of COVER).
+@export var charge_range: float = 56.0
+## Burst speed, times chase_speed, and how long the burst lasts.
+@export var charge_speed: float = 1.4
+@export var charge_time: float = 0.5
+## Seconds after a burst before it can burst again.
+@export var charge_cooldown: float = 1.2
+
 @export_group("Gun")
 ## Seconds between a gun enemy turning to you and firing. No warning is shown:
 ## this is all the time you get to react (Fianso: "few milliseconds").
