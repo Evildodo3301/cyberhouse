@@ -32,6 +32,9 @@ enum Kind { MELEE, GUN }
 @export var ammo: int = 0
 ## How fast bullets fly, in pixels per second (you can see them travel).
 @export var bullet_speed: float = 420.0
+## Keeps firing while you hold the aim stick (every recovery_time), like
+## the machine gun. Off = one shot each time you lift your thumb.
+@export var automatic: bool = false
 ## Bullets per shot (a shotgun would use 5 or more).
 @export var pellets: int = 1
 ## Random spread of each bullet, in degrees either side.
@@ -45,5 +48,24 @@ enum Kind { MELEE, GUN }
 @export var void_flash: float = 0.0
 
 @export_group("Looks")
-## Colour of the weapon lying on the floor (placeholder until art).
+## Colour of bullets and of the placeholder shape when there is no art.
 @export var color: Color = Color(0.85, 0.85, 0.85)
+## Top-down sprite pointing right (+x): lying on the floor and held in hand.
+@export var floor_texture: Texture2D
+## Side view for the HUD, next to the ammo count.
+@export var icon: Texture2D
+## Spin frames side by side, played while it flies after a throw.
+@export var thrown_texture: Texture2D
+@export var thrown_frames: int = 4
+## Gun: muzzle fire frames, side by side, pointing right from the barrel.
+## Melee: the swing streak.
+@export var fire_texture: Texture2D
+@export var fire_frames: int = 4
+## Frames per second of the fire / swing animation.
+@export var fire_fps: float = 60.0
+
+
+## Frame `index` of a strip of `count` frames laid side by side.
+static func frame_rect(texture: Texture2D, count: int, index: int) -> Rect2:
+	var w := texture.get_width() / float(count)
+	return Rect2(w * clampi(index, 0, count - 1), 0, w, texture.get_height())

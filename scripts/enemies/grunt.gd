@@ -35,6 +35,8 @@ extends CharacterBody2D
 const BULLET_SCENE := preload("res://scenes/weapons/bullet.tscn")
 ## Screen pixels inside the edge a gun enemy must be before it may fire.
 const SCREEN_MARGIN := 12.0
+## Shots in one machine gun burst.
+const BURST_SHOTS := 5
 
 enum State { PATROL, ALERT, CHASE, ATTACK, SEARCH, KNOCKED_DOWN, DEAD, AIM }
 
@@ -94,9 +96,14 @@ var _feint_phase: int = 0
 var _feint_left: float = 0.0
 var _feint_cooldown: float = 0.0
 var _feint_side: float = 0.0   # 0 = straight lunge, -1/+1 = side-step that way
+## True while the player sits on it for a ground finisher: it can't get up.
+var pinned: bool = false
 ## Charge burst: seconds left at charge speed, and the wait before the next.
 var _charge_left: float = 0.0
 var _charge_rest: float = 0.0
+## Machine gun burst: shots still to fire, and when the next one goes.
+var _burst_left: int = 0
+var _next_shot: float = 0.0
 ## Seconds the muzzle flash still shows after a shot.
 var _muzzle_time: float = 0.0
 var _flee_from: Vector2
@@ -223,7 +230,7 @@ func _physics_process(delta: float) -> void:
 				_enter(State.CHASE)   # re-sighting: no reaction delay
 		State.KNOCKED_DOWN:
 			velocity = velocity.move_toward(Vector2.ZERO, 400.0 * delta)
-			if _state_time >= settings.knockdown_time:
+			if _state_time >= settings.knockdown_time and not pinned:
 				_enter(State.CHASE if sees else State.SEARCH)
 	move_and_slide()
 	_update_sprite(delta)
@@ -394,8 +401,9 @@ func on_screen() -> bool:
 	return view.has_point(get_viewport().get_canvas_transform() * global_position)
 
 
-## Stands still and turns to you, then fires one bullet after shot_delay.
-## It keeps turning until it fires: the delay is your only chance.
+## Stands still and turns to you, then fires after shot_delay. It keeps
+## turning until it fires: the delay is your only chance. An automatic gun
+## (machine gun) fires a burst of BURST_SHOTS while it still has a clear shot.
 func _aim(player: Node2D) -> void:
 	velocity = Vector2.ZERO
 	if not _struck:
@@ -407,13 +415,30 @@ func _aim(player: Node2D) -> void:
 			return
 		if _state_time >= settings.shot_delay:
 			_struck = true
-			_muzzle_time = 0.06
-			var bullet: Bullet = BULLET_SCENE.instantiate()
-			get_parent().add_child(bullet)
-			bullet.fire(global_position + _attack_direction * 8.0, _attack_direction, carried_weapon, self)
-			bullet.weapon_id = "grunt_gun"
-	elif _state_time >= settings.shot_delay + settings.shot_recovery:
+			_burst_left = BURST_SHOTS - 1 if carried_weapon.automatic else 0
+			_next_shot = _state_time + carried_weapon.recovery_time
+			_shoot()
+		return
+	if _burst_left > 0 and _state_time >= _next_shot:
+		if player and player.is_alive() and _can_shoot(player):
+			_attack_direction = global_position.direction_to(player.global_position)
+			facing = _attack_direction
+			_burst_left -= 1
+			_next_shot = _state_time + carried_weapon.recovery_time
+			_shoot()
+		else:
+			_burst_left = 0
+	if _burst_left == 0 and _state_time >= _next_shot + settings.shot_recovery:
 		_enter(State.CHASE)
+
+
+func _shoot() -> void:
+	_muzzle_time = _muzzle_length()
+	var spread := deg_to_rad(randf_range(-carried_weapon.spread_degrees, carried_weapon.spread_degrees))
+	var bullet: Bullet = BULLET_SCENE.instantiate()
+	get_parent().add_child(bullet)
+	bullet.fire(global_position + _attack_direction * 8.0, _attack_direction.rotated(spread), carried_weapon, self)
+	bullet.weapon_id = "grunt_gun"
 
 
 func _in_swing(player: Node2D) -> bool:
@@ -505,6 +530,10 @@ func _drop_weapon(direction: Vector2) -> void:
 
 
 ## A door slammed into it: it falls and can't act for a moment.
+func is_down() -> bool:
+	return state == State.KNOCKED_DOWN
+
+
 func knock_down(_by: Node, direction: Vector2) -> void:
 	if state == State.DEAD:
 		return
@@ -747,6 +776,13 @@ func _draw() -> void:
 	draw_line(Vector2.ZERO, facing * 9.0, Color(0.1, 0.1, 0.1), 3.0)
 
 
+## How long the muzzle fire shows: the art's frames, or a quick flash.
+func _muzzle_length() -> float:
+	if carried_weapon and carried_weapon.fire_texture:
+		return carried_weapon.fire_frames / carried_weapon.fire_fps
+	return 0.06
+
+
 ## Everything drawn on top of the body: gun, eyes, warnings and barks.
 func _draw_overlay() -> void:
 	var o := _overlay
@@ -755,9 +791,23 @@ func _draw_overlay() -> void:
 	if carried_weapon:
 		# The gun it will drop, held at its side.
 		var hand := facing.orthogonal() * 5.0 + facing * 6.0
-		o.draw_line(hand, hand + facing * 6.0, carried_weapon.color, 2.5)
+		if carried_weapon.floor_texture:
+			var size := carried_weapon.floor_texture.get_size()
+			o.draw_set_transform(hand, facing.angle())
+			o.draw_texture(carried_weapon.floor_texture, Vector2(0, -size.y / 2.0))
+			o.draw_set_transform(Vector2.ZERO)
+		else:
+			o.draw_line(hand, hand + facing * 6.0, carried_weapon.color, 2.5)
 	if _muzzle_time > 0.0:
-		o.draw_circle(facing * 14.0, 3.0, Color(1, 0.95, 0.6))
+		var art := carried_weapon.fire_texture if carried_weapon else null
+		if art and has_gun():
+			var frame := int((_muzzle_length() - _muzzle_time) * carried_weapon.fire_fps)
+			var rect := WeaponData.frame_rect(art, carried_weapon.fire_frames, frame)
+			o.draw_set_transform(facing * 14.0, facing.angle())
+			o.draw_texture_rect_region(art, Rect2(Vector2(0, -rect.size.y / 2.0), rect.size), rect)
+			o.draw_set_transform(Vector2.ZERO)
+		else:
+			o.draw_circle(facing * 14.0, 3.0, Color(1, 0.95, 0.6))
 	if tell_color.a > 0.0:
 		# Glowing eyes: this grunt has learned your moves.
 		var eyes := facing * 3.0

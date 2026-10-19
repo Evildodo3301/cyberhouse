@@ -12,6 +12,8 @@ extends Node2D
 ##   m  machete on the floor
 ##   C  cop grunt with a pistol: shoots you, drops the pistol
 ##   M  cop grunt with a machete (drops it)    F  cop grunt, fists only
+##   G  cop grunt with a machine gun: fires bursts, drops it
+##   u  machine gun on the floor
 ##   V  civilian grunt with a pistol (looks like a cop for now, so the
 ##      player is the only one in pink; shoots, drops the pistol)
 ##   E  exit (opens once every enemy is dead)
@@ -27,6 +29,7 @@ extends Node2D
 ## Art: Pixel 16 Interiors (free version) by zedpxl, see CREDITS.md.
 
 const MACHETE := preload("res://data/weapons/machete.tres")
+const MACHINE_GUN := preload("res://data/weapons/machine_gun.tres")
 const GRUNT_SCENE := preload("res://scenes/enemies/grunt.tscn")
 const DOOR_SCENE := preload("res://scenes/props/swing_door.tscn")
 const PICKUP_SCENE := preload("res://scenes/weapons/weapon_pickup.tscn")
@@ -52,6 +55,19 @@ const FURNITURE := {
 	"rug_orange": [Rect2(128, 80, 32, 16), false],
 	"rug_green": [Rect2(133, 101, 36, 22), false],
 }
+## Gang carpets (A Velvet Fang, B Wire Crown, C Static Saints): a big rug in
+## the middle of each big room and a mat at each door, each one a design
+## picked at random. Teal so the blood shows up on them.
+const GANG_RUGS := [
+	preload("res://assets/levels/rugs/rug-A-velvet-fang-72x48.png"),
+	preload("res://assets/levels/rugs/rug-B-wire-crown-72x48.png"),
+	preload("res://assets/levels/rugs/rug-C-static-saints-72x48.png"),
+]
+const GANG_DOORMATS := [
+	preload("res://assets/levels/rugs/doormat-A-velvet-fang-28x16.png"),
+	preload("res://assets/levels/rugs/doormat-B-wire-crown-28x16.png"),
+	preload("res://assets/levels/rugs/doormat-C-static-saints-28x16.png"),
+]
 ## Floor tiles in the interiors sheet. Rooms take turns: wood, brick, wood...
 const WOOD_TILES := [Rect2(96, 48, 16, 16), Rect2(112, 48, 16, 16)]
 const BRICK_TILES := [Rect2(48, 32, 16, 16), Rect2(48, 48, 16, 16)]
@@ -68,6 +84,11 @@ const BRICK_TILES := [Rect2(48, 32, 16, 16), Rect2(48, 48, 16, 16)]
 ## stop at their own doorway. Early levels keep this low. Which enemies roam
 ## is fixed by map order, so it is the same on every retry.
 @export_range(0.0, 1.0) var roam_chance: float = 0.15
+## Rooms with at least this many floor tiles get a big gang rug in the middle.
+@export var rug_min_tiles: int = 250
+## Picks the rug designs and which side of each door its mat lies on. 0 = use
+## the level's file name, so the carpets stay put on every retry.
+@export var rug_seed: int = 0
 
 ## Size of the level in pixels.
 var size_px: Vector2
@@ -88,6 +109,7 @@ func _ready() -> void:
 	_find_rooms()
 	_build_walls()
 	_build_doorways()
+	_place_gang_rugs()
 	_place_furniture()
 	_spawn_things()
 	_build_navigation()
@@ -210,6 +232,66 @@ func _build_walls() -> void:
 			add_child(body)
 
 
+## Gang rugs and doormats, flat on the floor under the blood and furniture.
+func _place_gang_rugs() -> void:
+	var rng := RandomNumberGenerator.new()
+	var level := get_parent()
+	rng.seed = rug_seed if rug_seed != 0 else hash((level.scene_file_path if level else "") + str(name))
+	# Big rooms: the rug spot nearest the room's middle that lies fully on its floor.
+	var tiles_of_room := {}
+	for at in _room_of_tile:
+		tiles_of_room.get_or_add(_room_of_tile[at], []).append(at)
+	var rug_tiles := Vector2i(GANG_RUGS[0].get_size() / tile_px)
+	var rooms := tiles_of_room.keys()
+	rooms.sort()
+	for room in rooms:
+		var tiles: Array = tiles_of_room[room]
+		if tiles.size() < rug_min_tiles:
+			continue
+		var middle := Vector2.ZERO
+		for at in tiles:
+			middle += Vector2(at)
+		middle /= tiles.size()
+		var best := Vector2i(-1, -1)
+		var best_distance := INF
+		for at in tiles:
+			var corner: Vector2i = at
+			var distance := (Vector2(corner) + Vector2(rug_tiles) * 0.5).distance_squared_to(middle + Vector2(0.5, 0.5))
+			if distance < best_distance and _room_covers(room, corner, rug_tiles):
+				best = corner
+				best_distance = distance
+		if best.x >= 0:
+			_add_rug(GANG_RUGS[rng.randi() % GANG_RUGS.size()], Vector2(best * tile_px) + Vector2(rug_tiles * tile_px) * 0.5, 0.0)
+	# A mat on one side of every door, picked at random, long side along the door.
+	for door in get_children():
+		if not door is SwingDoor:
+			continue
+		var along := Vector2.RIGHT.rotated(door.rotation)
+		var side := along.orthogonal() * (1.0 if rng.randf() < 0.5 else -1.0)
+		var spot: Vector2 = door.position + along * door.length * 0.5 + side * tile_px * 1.5
+		_add_rug(GANG_DOORMATS[rng.randi() % GANG_DOORMATS.size()], spot, door.rotation)
+
+
+## True if every tile of the size x size block at `corner` is floor of `room`.
+func _room_covers(room: int, corner: Vector2i, size: Vector2i) -> bool:
+	for y in size.y:
+		for x in size.x:
+			if _room_of_tile.get(corner + Vector2i(x, y), -1) != room:
+				return false
+	return true
+
+
+func _add_rug(texture: Texture2D, at: Vector2, turn: float) -> void:
+	var rug := Sprite2D.new()
+	rug.texture = texture
+	rug.position = at
+	rug.rotation = turn
+	rug.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	rug.z_index = -1   # on the floor, under the blood
+	rug.add_to_group("rugs")
+	add_child(rug)
+
+
 ## Puts each furniture line's sprite down; solid pieces get a body that
 ## blocks movement and bullets, and the enemies' pathfinding goes round it.
 func _place_furniture() -> void:
@@ -276,7 +358,7 @@ func _build_doorways() -> void:
 
 
 func _spawn_things() -> void:
-	var count := {"C": 0, "V": 0, "M": 0, "F": 0, "g": 0, "m": 0}
+	var count := {"C": 0, "V": 0, "M": 0, "F": 0, "G": 0, "g": 0, "m": 0, "u": 0}
 	for at in _floor_tiles:
 		var letter := tile(at)
 		var spot := _tile_center(at)
@@ -287,17 +369,19 @@ func _spawn_things() -> void:
 					player = get_parent().get_node_or_null("Player")
 				if player:
 					player.global_position = spot
-			"C", "V", "M", "F":
+			"C", "V", "M", "F", "G":
 				count[letter] += 1
 				var grunt: Node2D = GRUNT_SCENE.instantiate()
-				grunt.name = {"C": "Cop%d", "V": "Civilian%d", "M": "Thug%d", "F": "Brawler%d"}[letter] % count[letter]
+				grunt.name = {"C": "Cop%d", "V": "Civilian%d", "M": "Thug%d", "F": "Brawler%d", "G": "Gunner%d"}[letter] % count[letter]
 				grunt.position = spot
 				if letter == "M":
 					grunt.carried_weapon = MACHETE
+				elif letter == "G":
+					grunt.carried_weapon = MACHINE_GUN
 				elif letter == "F":
 					grunt.carried_weapon = null   # fists only, drops nothing
 				# Every 1/roam_chance-th enemy (in map order) is a roamer.
-				var index: int = count["C"] + count["V"] + count["M"] + count["F"]
+				var index: int = count["C"] + count["V"] + count["M"] + count["F"] + count["G"]
 				grunt.stays_in_room = floori(index * roam_chance) == floori((index - 1) * roam_chance)
 				grunt.start_facing_degrees = rad_to_deg(spot.angle_to_point(_room_center(at)))
 				add_child(grunt)
@@ -312,6 +396,13 @@ func _spawn_things() -> void:
 				var pickup: Node2D = PICKUP_SCENE.instantiate()
 				pickup.name = "Machete%d" % count["m"]
 				pickup.weapon = MACHETE
+				pickup.position = spot
+				add_child(pickup)
+			"u":
+				count["u"] += 1
+				var pickup: Node2D = PICKUP_SCENE.instantiate()
+				pickup.name = "MachineGun%d" % count["u"]
+				pickup.weapon = MACHINE_GUN
 				pickup.position = spot
 				add_child(pickup)
 			"E":

@@ -30,6 +30,15 @@ signal died(weapon: String)
 const BOMB_SCENE := preload("res://scenes/weapons/bomb.tscn")
 const PICKUP_SCENE := preload("res://scenes/weapons/weapon_pickup.tscn")
 const BULLET_SCENE := preload("res://scenes/weapons/bullet.tscn")
+## A thrown weapon's speed (it slides about 120 px) and how far a tap looks
+## for an enemy to throw at.
+const THROW_SPEED := 320.0
+const THROW_ASSIST_RANGE := 120.0
+## Ground finisher: how close a downed enemy must be, how long it takes and
+## how many blows land (the kill comes with the last one).
+const FINISH_RANGE := 22.0
+const FINISH_TIME := 0.6
+const FINISH_BLOWS := 3
 const CROSSHAIR_TEXTURE := preload("res://assets/ui/crosshair.png")
 
 ## All the tuning numbers. Edit res://data/player_settings.tres to change them.
@@ -86,8 +95,13 @@ var _attack_state: AttackState = AttackState.READY
 var _attack_timer: float = 0.0
 var _attack_direction: Vector2 = Vector2.RIGHT
 var _swing_flash: float = 0.0   # how long the swing arc stays visible
+## The downed enemy you're sitting on and smashing (ground finisher), if any.
+var _finishing: Node2D
+var _finish_time: float = 0.0
+var _finish_blows: int = 0
 var _stride: float = 0.0   # distance walked, drives the step animation
 var _muzzle_flash: float = 0.0   # seconds the flash at the barrel stays visible
+var _fire_anim: float = -1.0   # seconds into the weapon's fire / swing frames (-1 = none)
 var _crosshair: Sprite2D
 var _sprite: Sprite2D        # arms, body and head, on the torso (turns with the aim)
 var _legs_sprite: Sprite2D   # the feet, on the legs (turn with the walk)
@@ -148,6 +162,7 @@ func _physics_process(delta: float) -> void:
 		request_attack(_keyboard_aim())   # ZERO = "nearest target", like a tap
 	if Input.is_action_just_pressed("throw_bomb"):
 		request_bomb(Vector2.ZERO)
+	_auto_fire()
 	_update_attack(delta)
 	_update_crosshair()
 	_update_tracers(delta)
@@ -166,6 +181,9 @@ func _read_move_input() -> Vector2:
 
 
 func _update_movement(delta: float) -> void:
+	if _finishing:
+		velocity = Vector2.ZERO   # sitting on an enemy: you can't move
+		return
 	var input := _read_move_input()
 	if input != Vector2.ZERO:
 		# Fixed speed in M1: the stick only chooses the direction.
@@ -268,8 +286,12 @@ func _find_target(direction: Vector2, max_distance: float, max_degrees: float) -
 ## Ask for an attack. `direction` = where to swing, or ZERO for a quick tap
 ## (swing at the nearest target in front, or straight ahead if there is none).
 func request_attack(direction: Vector2) -> void:
-	if not _alive or _attack_state != AttackState.READY:
+	if not _alive or _attack_state != AttackState.READY or _finishing:
 		return   # still swinging or recovering
+	var downed := _downed_enemy_here()
+	if downed:
+		_start_finisher(downed)
+		return
 	if direction == Vector2.ZERO:
 		var tap_range := weapon.reach if has_gun() else settings.tap_assist_radius
 		var target := _find_target(facing, tap_range, settings.tap_assist_degrees)
@@ -286,6 +308,9 @@ func request_attack(direction: Vector2) -> void:
 
 func _update_attack(delta: float) -> void:
 	_swing_flash = maxf(_swing_flash - delta, 0.0)
+	if _finishing:
+		_update_finisher(delta)
+		return
 	if _attack_state == AttackState.READY:
 		return
 	_attack_timer -= delta
@@ -305,6 +330,7 @@ func _update_attack(delta: float) -> void:
 ## The moment the swing lands: hit every target inside the arc.
 func _strike() -> void:
 	_swing_flash = 0.08
+	_start_fire_anim()
 	for target in _targets_in_swing(_attack_direction):
 		target.take_hit(self, _attack_direction, "melee")
 		_play_kill_feedback(target)
@@ -334,11 +360,21 @@ func has_gun() -> bool:
 	return weapon != null and weapon.kind == WeaponData.Kind.GUN
 
 
+## Automatic guns (the machine gun) keep firing while you hold the aim stick.
+func _auto_fire() -> void:
+	if not has_gun() or not weapon.automatic or _attack_state != AttackState.READY:
+		return
+	var aim := get_aim_input()
+	if aim != Vector2.ZERO:
+		request_attack(aim.rotated(-view_rotation))   # request_attack turns it back
+
+
 ## Fires the gun: each bullet flies across the room (Bullet) and kills the
 ## first target it meets, unless a wall or a closed door stops it first.
 func _fire() -> void:
 	ammo -= 1
 	_muzzle_flash = 0.05
+	_start_fire_anim()
 	_light_time = LIGHT_TIME
 	for i in maxi(weapon.pellets, 1):
 		var spread := deg_to_rad(randf_range(-weapon.spread_degrees, weapon.spread_degrees))
@@ -414,6 +450,82 @@ func try_pick_up(pickup: WeaponPickup) -> bool:
 	return true
 
 
+# ---------------------------------------------------------- ground finisher
+
+## A knocked-down enemy (door, thrown weapon) you're standing on, if any.
+func _downed_enemy_here() -> Node2D:
+	for enemy in get_tree().get_nodes_in_group("enemies"):
+		if enemy.has_method("is_down") and enemy.is_down() \
+				and enemy.global_position.distance_to(global_position) <= FINISH_RANGE:
+			return enemy
+	return null
+
+
+## Attack while standing on a downed enemy: you get on top of it and smash
+## its head (FINISH_BLOWS blows in FINISH_TIME), then it dies. You can't
+## move meanwhile, so its friends can get you: that's the risk.
+func _start_finisher(enemy: Node2D) -> void:
+	_finishing = enemy
+	_finish_time = 0.0
+	_finish_blows = 0
+	enemy.pinned = true
+	global_position = enemy.global_position   # on top of it
+	facing = enemy.facing   # its head is that way: that's where the blows land
+	_attack_direction = facing
+	_last_attack = "melee"
+	_last_attack_ms = Time.get_ticks_msec()
+
+
+func _update_finisher(delta: float) -> void:
+	if not is_instance_valid(_finishing) or not _finishing.is_alive():
+		_finishing = null
+		return
+	_finish_time += delta
+	velocity = Vector2.ZERO
+	var due := int(_finish_time / (FINISH_TIME / FINISH_BLOWS))
+	while _finish_blows < mini(due, FINISH_BLOWS):
+		_finish_blows += 1
+		_swing_flash = 0.06
+		Game.shake(3.0, _attack_direction)
+	if _finish_blows >= FINISH_BLOWS:
+		var enemy := _finishing
+		_finishing = null
+		enemy.pinned = false
+		enemy.take_hit(self, _attack_direction, "melee")
+		_play_kill_feedback(enemy)
+		_attack_state = AttackState.RECOVERY
+		_attack_timer = weapon.recovery_time
+
+
+func is_finishing() -> bool:
+	return _finishing != null
+
+
+## THROW: hurls what you hold (aimed, dragged, or at the nearest enemy in
+## front). It knocks down the first enemy it hits, so you can finish them,
+## then lies on the floor with its ammo. You're left with your fists.
+func request_throw(direction: Vector2) -> void:
+	if not _alive or weapon == settings.start_weapon:
+		return
+	if direction == Vector2.ZERO:
+		var aim := get_aim_input()
+		direction = aim if aim != Vector2.ZERO else facing
+		var target := _find_target(direction, THROW_ASSIST_RANGE, settings.tap_assist_degrees)
+		if target:
+			direction = global_position.direction_to(target.global_position)
+	else:
+		direction = direction.normalized().rotated(view_rotation)
+	facing = direction.normalized()
+	var thrown: WeaponPickup = PICKUP_SCENE.instantiate()
+	thrown.weapon = weapon
+	thrown.ammo = maxi(ammo, 0)
+	thrown.ignore_player = true
+	thrown.thrower = self
+	get_parent().add_child(thrown)
+	thrown.fling(global_position + facing * 6.0, facing, THROW_SPEED)
+	equip(settings.start_weapon, -1)
+
+
 func _drop_weapon(direction: Vector2) -> void:
 	var dropped: WeaponPickup = PICKUP_SCENE.instantiate()
 	dropped.weapon = weapon
@@ -423,8 +535,16 @@ func _drop_weapon(direction: Vector2) -> void:
 	equip(settings.start_weapon, -1)
 
 
+func _start_fire_anim() -> void:
+	_fire_anim = 0.0 if weapon.fire_texture else -1.0
+
+
 func _update_tracers(delta: float) -> void:
 	_muzzle_flash = maxf(_muzzle_flash - delta, 0.0)
+	if _fire_anim >= 0.0:
+		_fire_anim += delta
+		if weapon.fire_texture == null or _fire_anim * weapon.fire_fps >= weapon.fire_frames:
+			_fire_anim = -1.0
 	_light_time = maxf(_light_time - delta, 0.0)
 	_muzzle_light.visible = _light_time > 0.0
 	_muzzle_light.modulate.a = _light_time / LIGHT_TIME
@@ -576,19 +696,39 @@ func _draw() -> void:
 	if not _alive:
 		return   # the body is painted on the floor by the gore layer
 
-	# Muzzle flash at the end of the barrel.
-	if _muzzle_flash > 0.0:
-		draw_circle(_attack_direction * 12.0, 3.0, Color(1, 0.95, 0.6))
+	# Ground finisher (placeholder until the Art Director's frames): the
+	# torso bobs with each blow and the head end of the body flashes.
+	if _finishing:
+		_torso.scale = Vector2.ONE * (1.25 if _swing_flash > 0.0 else 1.0)
+		if _swing_flash > 0.0:
+			draw_circle(facing * 8.0, 5.0, Color(1, 0.15, 0.2, 0.9))
+			draw_circle(facing * 8.0, 2.5, Color(1, 1, 1))
+		return
+	_torso.scale = Vector2.ONE
+	var angle := _attack_direction.angle()
+	if _fire_anim >= 0.0 and weapon.fire_texture:
+		var rect := WeaponData.frame_rect(weapon.fire_texture, weapon.fire_frames, int(_fire_anim * weapon.fire_fps))
+		if has_gun():
+			# Muzzle fire, starting at the end of the barrel.
+			draw_set_transform(_attack_direction * 12.0, angle)
+			draw_texture_rect_region(weapon.fire_texture, Rect2(Vector2(0, -rect.size.y / 2.0), rect.size), rect)
+		else:
+			# The swing streak, sweeping through the arc.
+			var grow := weapon.reach * 0.9 / rect.size.x
+			draw_set_transform(_attack_direction * weapon.reach * 0.5, angle, Vector2(grow, grow))
+			draw_texture_rect_region(weapon.fire_texture, Rect2(-rect.size / 2.0, rect.size), rect)
+		draw_set_transform(Vector2.ZERO)
+	elif _muzzle_flash > 0.0:
+		draw_circle(_attack_direction * 12.0, 3.0, Color(1, 0.95, 0.6))   # no art: a plain flash
 	if has_gun():
 		return   # the swing arcs below are for melee only
 
 	# Wind-up: a thin outline of where the swing is about to land.
 	var half_arc := deg_to_rad(weapon.arc_degrees * 0.5)
-	var angle := _attack_direction.angle()
 	if _attack_state == AttackState.WINDUP:
 		draw_arc(Vector2.ZERO, weapon.reach, angle - half_arc, angle + half_arc, 12, Color(1, 1, 1, 0.4), 1.0)
 	# The swing itself: a bright, thick arc for a few frames.
-	if _swing_flash > 0.0:
+	if _swing_flash > 0.0 and weapon.fire_texture == null:
 		draw_arc(Vector2.ZERO, weapon.reach * 0.8, angle - half_arc, angle + half_arc, 12, Color(1, 1, 1, 0.95), 5.0)
 
 
@@ -610,7 +750,12 @@ func _draw_torso() -> void:
 	if not _alive:
 		return
 	if _sprite:
-		if has_gun():
+		if weapon.floor_texture and weapon != settings.start_weapon:
+			# Gun held out in both hands; a blade in the right hand.
+			var size := weapon.floor_texture.get_size()
+			var at := Vector2(4, -size.y / 2.0) if has_gun() else Vector2(1, 4 - size.y / 2.0)
+			_torso.draw_texture(weapon.floor_texture, at)
+		elif has_gun():
 			_torso.draw_rect(Rect2(5, -1.25, 6, 2.5), weapon.color)   # held out in both hands
 		elif weapon != settings.start_weapon:
 			# A blade in the right hand, pointing forward.

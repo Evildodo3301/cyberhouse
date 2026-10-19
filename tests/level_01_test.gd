@@ -54,10 +54,38 @@ func _initialize() -> void:
 	check(player._legs_sprite != null and player._legs_sprite.get_parent().name == "Legs", "the template's feet are on the legs (they turn apart)")
 	var pieces := map.get_children().filter(func(c): return c is Sprite2D and c.region_enabled)
 	check(pieces.size() >= 30, "furniture in every room (%d pieces)" % pieces.size())
-	check(enemies.all(func(e): return e.sheet.resource_path.ends_with("cop.png")), "every enemy looks like a cop")
+	check(enemies.all(func(e): return e.sheet.resource_path.ends_with("cop_suit.png")), "every enemy wears a black suit")
 	var thugs := enemies.filter(func(e): return e.carried_weapon and e.carried_weapon.id == &"machete")
 	check(thugs.size() == 4, "4 enemies carry a machete")
 	check(enemies.filter(func(e): return e.has_gun()).size() == 4, "4 of the 12 enemies have guns and shoot")
+	check(enemies.filter(func(e): return e.carried_weapon and e.carried_weapon.id == &"machine_gun").size() == 1, "one enemy has a machine gun")
+	check(pickups.filter(func(p): return p.weapon.id == &"machine_gun").size() == 1, "a machine gun lies in the house")
+	# Gang carpets: a rug in each big room, a mat at every door, all three designs used.
+	var rugs := root.get_tree().get_nodes_in_group("rugs")
+	var big_rugs := rugs.filter(func(r): return r.texture.resource_path.get_file().begins_with("rug-"))
+	var mats := rugs.filter(func(r): return r.texture.resource_path.get_file().begins_with("doormat-"))
+	print("      rugs: ", big_rugs.map(func(r): return r.texture.resource_path.get_file().substr(4, 1)), " mats: ", mats.map(func(r): return r.texture.resource_path.get_file().substr(8, 1)))
+	check(big_rugs.size() >= 5, "big rooms have a gang rug in the middle (%d)" % big_rugs.size())
+	check(mats.size() == doors.size(), "a doormat at every door")
+	var designs := {}
+	for r in rugs:
+		designs[r.texture.resource_path.get_file().split("-")[1]] = true
+	check(designs.size() == 3, "all three gang designs show up")
+	check(rugs.all(func(r): return r.z_index == -1), "carpets lie under the blood and furniture")
+	check(big_rugs.all(func(r): return map.room_at(r.global_position) >= 0 and map.room_at(r.global_position - r.texture.get_size() * 0.45) == map.room_at(r.global_position + r.texture.get_size() * 0.45)), "each rug lies inside one room")
+	var rug_layout := rugs.map(func(r): return [r.texture.resource_path, r.global_position])
+	# Furniture never blocks a spawn, a pickup or a door's swing.
+	var solids := map.get_children().filter(func(c): return c is StaticBody2D and c.is_in_group("nav_walls") and map.tile(Vector2i(c.position / map.tile_px)) != "#")
+	var spots: Array = enemies.map(func(e): return e.global_position) + pickups.map(func(p): return p.global_position)
+	var blocked := spots.filter(func(at):
+		var q := PhysicsPointQueryParameters2D.new()
+		q.position = at
+		q.collision_mask = 1
+		return not player.get_world_2d().direct_space_state.intersect_point(q).is_empty())
+	check(blocked.is_empty(), "no spawn or weapon sits inside furniture %s" % [blocked])
+	var in_swing := solids.filter(func(b): return doors.any(func(d): return (b.global_position - (d.global_position + Vector2.RIGHT.rotated(d.rotation) * d.length * 0.5)).length() < d.length * 0.75))
+	check(in_swing.is_empty(), "no furniture in a door's swing %s" % [in_swing.map(func(b): return Vector2i(b.position / 8.0))])
+
 	var roamers := enemies.filter(func(e): return not e.stays_in_room)
 	print("      roamers: ", roamers.map(func(e): return e.name))
 	check(roamers.size() >= 1 and roamers.size() <= 3, "only a few enemies may leave their room (%d of 12)" % roamers.size())
@@ -167,9 +195,10 @@ func _initialize() -> void:
 				holding.append(body.name)
 	check(holding.is_empty(), "waiting enemies never hold a door open %s" % [holding])
 
-	# Kill everyone: the exit opens; walk in: LEVEL COMPLETE. (A roamer may
-	# have got you during the waiting check: start the room again first.)
-	if not player.is_alive():
+	# Kill everyone: the exit opens; walk in: LEVEL COMPLETE. (Restart first:
+	# a roamer may have got you during the waiting check.)
+	if true:
+		# A retry keeps the carpets where they were.
 		root.get_node("Game").restart_room()
 		await process_frame
 		await process_frame
@@ -177,6 +206,8 @@ func _initialize() -> void:
 		level = current_scene
 		player = level.get_node("Player")
 		exit_zone = root.get_tree().get_first_node_in_group("exit")
+		var again := root.get_tree().get_nodes_in_group("rugs").map(func(r): return [r.texture.resource_path, r.global_position])
+		check(again == rug_layout, "a retry keeps the same carpets in the same places")
 	player.global_position = t.call(6, 58)
 	for enemy in root.get_tree().get_nodes_in_group("enemies"):
 		enemy.take_hit(player, Vector2.RIGHT, "melee")

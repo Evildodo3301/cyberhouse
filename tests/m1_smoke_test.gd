@@ -682,5 +682,74 @@ func _initialize() -> void:
 	check(covered and came_out, "a gun enemy hides (COVER), then comes out shooting")
 	tracker.clear_room(room)
 
+	# 31. The machine gun fires on its own while you hold the aim stick.
+	await reload_room(true)
+	main = current_scene
+	player = main.get_node("Player")
+	main.get_node("GruntPatrol").free()
+	main.get_node("GruntGuard").free()
+	var mg: WeaponData = load("res://data/weapons/machine_gun.tres")
+	player.equip(mg, -1)
+	touch(1, Vector2(420, 300), true)
+	drag(1, Vector2(460, 300))
+	await wait_frames(40)
+	touch(1, Vector2(460, 300), false)
+	await wait_frames(2)
+	check(mg.automatic and player.ammo <= mg.ammo - 5, "holding the aim stick keeps the machine gun firing (%d of %d left)" % [player.ammo, mg.ammo])
+
+	# 32. An enemy with a machine gun fires a burst.
+	await reload_room(true)
+	main = current_scene
+	player = main.get_node("Player")
+	main.get_node("GruntPatrol").free()
+	guard = main.get_node("GruntGuard")
+	guard.carried_weapon = mg
+	player.global_position = guard.global_position + Vector2(-50, 0)
+	var burst := 0
+	for i in 60:
+		await wait_frames(1)
+		burst = maxi(burst, guard._burst_left)
+		if guard._struck and guard.state == 7:
+			break
+	check(burst == guard.BURST_SHOTS - 1, "a machine gun enemy fires a burst (%d more after the first)" % burst)
+
+	# 33. THROW: your weapon flies at the enemy and knocks it down, then lies there.
+	await reload_room(true)
+	main = current_scene
+	player = main.get_node("Player")
+	main.get_node("GruntPatrol").free()
+	guard = main.get_node("GruntGuard")
+	player.equip(load("res://data/weapons/pistol.tres"), 3)
+	player.global_position = guard.global_position + Vector2(-45, 0)
+	player.facing = Vector2.RIGHT
+	player.request_throw(Vector2.ZERO)
+	check(player.weapon.id == &"fists", "throwing leaves you with your fists")
+	var downed := false
+	for i in 30:
+		await wait_frames(1)
+		if guard.is_down():
+			downed = true
+			break
+	check(downed, "the thrown gun knocks the enemy down")
+	await wait_frames(20)
+	var thrown_gun := root.get_tree().get_nodes_in_group("pickups").filter(func(p): return p.name != "PistolPickup" and p.weapon.id == &"pistol")
+	check(thrown_gun.size() == 1 and thrown_gun[0].ammo == 3, "the gun lands on the floor with its ammo")
+
+	# 34. Ground finisher: attack while on the downed enemy to smash its head.
+	player.global_position = guard.global_position + Vector2(-10, 0)
+	await wait_frames(1)
+	player.request_attack(Vector2.ZERO)
+	check(player.is_finishing(), "attacking on a downed enemy starts the finisher")
+	await wait_frames(18)
+	check(guard.is_alive() and guard.is_down(), "it takes a moment: the enemy is still down mid-finisher")
+	touch(0, Vector2(100, 250), true)
+	drag(0, Vector2(140, 250))
+	var start_pos: Vector2 = player.global_position
+	await wait_frames(10)
+	check(player.global_position.distance_to(start_pos) < 1.0, "you can't move during the finisher")
+	await wait_frames(12)
+	touch(0, Vector2(140, 250), false)
+	check(not guard.is_alive() and not player.is_finishing(), "after about 0.6 s the enemy is dead")
+
 	print("\n%s (%d failure(s))" % ["ALL PASSED" if failures == 0 else "SOME FAILED", failures])
 	quit(failures)

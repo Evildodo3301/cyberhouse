@@ -3,7 +3,8 @@
 ## Art
 
 - **Top-down style characters** (cop and civilian sprite sheets,
-  `assets/characters/cop.png`, `assets/characters/civilian.png`)
+  `assets/characters/cop.png`, `assets/characters/civilian.png`, and
+  `assets/characters/cop_suit.png`, the cop recoloured to a black suit)
   by **E.Vater**, https://evater.itch.io/top-down-style-characters.
   Licence: free for any purpose, including commercial, as long as credit is given.
 - **Top-down character template** (the player: `assets/characters/player_torso.png`,
@@ -20,5 +21,6 @@
 
 ## Everything else
 
-Code, crosshair (from the Creative Director's design) and placeholder shapes
-are original to Cyberhouse.
+Code, crosshair (from the Creative Director's design), weapon art
+(`assets/weapons/`), gang rugs and doormats (`assets/levels/rugs/`) and
+placeholder shapes are original to Cyberhouse.

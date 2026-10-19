@@ -18,19 +18,19 @@ extends Node2D
 ## How far it swings open, in degrees.
 @export var open_angle_degrees: float = 100.0
 ## Swing speed when pushed open (degrees per second). Fast = slam.
-@export var open_speed_degrees: float = 900.0
+@export var open_speed_degrees: float = 1800.0
 ## Swing speed when closing by itself (degrees per second).
-@export var close_speed_degrees: float = 220.0
+@export var close_speed_degrees: float = 440.0
 ## Seconds the doorway must be empty before the door starts closing.
-@export var close_delay: float = 0.35
+@export var close_delay: float = 0.2
 ## How springy the swing shut is: higher = snappier. With close_damping it
-## overshoots closed by about a third, then settles.
-@export var close_spring: float = 60.0
-@export var close_damping: float = 5.0
+## overshoots closed by about a sixth, then settles.
+@export var close_spring: float = 240.0
+@export var close_damping: float = 15.0
 ## How far a bullet knocks it open, in degrees.
 @export var shot_nudge_degrees: float = 22.0
 ## The door only knocks people down while swinging at least this fast.
-@export var knockdown_speed_degrees: float = 400.0
+@export var knockdown_speed_degrees: float = 500.0
 @export var color: Color = Color(0.95, 0.55, 0.15)   # neon orange
 
 ## Current angle in degrees (0 = closed, + or - = open to one side).
@@ -41,7 +41,7 @@ var swing_speed: float = 0.0
 var _spring_velocity: float = 0.0
 ## Opening speed right now: fast for a push, slow for a bullet nudge (so a
 ## shot never slams it into anyone).
-var _open_speed: float = 900.0
+var _open_speed: float = 1800.0
 
 var _target_angle: float = 0.0
 var _empty_time: float = 0.0

@@ -24,6 +24,8 @@ func _ready() -> void:
 	player.touch_controls = touch_controls
 	touch_controls.attack_requested.connect(player.request_attack)
 	touch_controls.bomb_requested.connect(player.request_bomb)
+	touch_controls.throw_requested.connect(player.request_throw)
+	player.weapon_changed.connect(func(weapon, _ammo): touch_controls.throw_button.can_throw = weapon != player.settings.start_weapon)
 	# Keep the counter on the bomb button in sync.
 	touch_controls.bomb_button.bombs_left = player.bombs_left
 	player.bombs_changed.connect(func(count): touch_controls.bomb_button.bombs_left = count)
@@ -75,9 +77,22 @@ func _add_weapon_label() -> void:
 	label.add_theme_color_override("font_color", Color(1, 1, 1, 0.85))
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(label)
+	# The weapon's side-view icon, drawn 2x, with the name and ammo after it.
+	var icon := TextureRect.new()
+	icon.name = "WeaponIcon"
+	icon.position = Vector2(44, 8)
+	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(icon)
 	add_child(layer)
 	var show_weapon := func(weapon: WeaponData, ammo: int):
 		label.text = weapon.display_name + ("  %d" % ammo if ammo >= 0 else "")
+		icon.texture = weapon.icon
+		icon.visible = weapon.icon != null
+		if weapon.icon:
+			icon.scale = Vector2(2, 2)
+			icon.position.y = 18 - weapon.icon.get_height()
+		label.position.x = 44 + (weapon.icon.get_width() * 2 + 8 if weapon.icon else 0)
 	player.weapon_changed.connect(show_weapon)
 	show_weapon.call(player.weapon, player.ammo)
 

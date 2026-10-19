@@ -1,6 +1,10 @@
-[gd_resource type="Resource" script_class="WeaponData" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="WeaponData" load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://scripts/weapons/weapon_data.gd" id="1_weapon"]
+[ext_resource type="Texture2D" path="res://assets/weapons/pistol_floor.png" id="2_floor"]
+[ext_resource type="Texture2D" path="res://assets/weapons/pistol_icon.png" id="3_icon"]
+[ext_resource type="Texture2D" path="res://assets/weapons/pistol_thrown_4f.png" id="4_thrown"]
+[ext_resource type="Texture2D" path="res://assets/weapons/pistol_muzzle_4f.png" id="5_fire"]
 
 [resource]
 script = ExtResource("1_weapon")
@@ -18,3 +22,9 @@ noise_loudness = 1.0
 shake = 4.0
 void_flash = 1.0
 color = Color(0.85, 0.85, 0.9, 1)
+floor_texture = ExtResource("2_floor")
+icon = ExtResource("3_icon")
+thrown_texture = ExtResource("4_thrown")
+fire_texture = ExtResource("5_fire")
+fire_frames = 4
+fire_fps = 60.0
