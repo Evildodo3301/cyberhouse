@@ -420,6 +420,8 @@ func _in_swing(player: Node2D) -> bool:
 	var to_player := player.global_position - global_position
 	if to_player.length() > settings.attack_range + 6.0:
 		return false
+	if to_player.length() < 8.0:
+		return true   # you're right on top of it: no angle can miss you
 	return absf(rad_to_deg(_attack_direction.angle_to(to_player))) <= settings.attack_arc_degrees * 0.5
 
 

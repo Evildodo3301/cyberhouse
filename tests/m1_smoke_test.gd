@@ -445,6 +445,33 @@ func _initialize() -> void:
 	guard = main.get_node("GruntGuard")
 	check(guard.tell_color.a > 0.0 and guard.counters(&"RUSH"), "adapted grunts have glowing eyes")
 
+	# 22b. Running into it without swinging still counts as a rush (the bump
+	# stops you dead just before its hit, which used to hide the rush).
+	tracker.clear_room(room)
+	await reload_room(true)
+	main = current_scene
+	player = main.get_node("Player")
+	main.get_node("GruntPatrol").free()
+	guard = main.get_node("GruntGuard")
+	player.global_position = guard.global_position + Vector2(-100, 0)
+	player.velocity = Vector2(96, 0)
+	for i in 150:   # keep steering straight at it, as a thumb would
+		var dir: Vector2 = player.global_position.direction_to(guard.global_position).rotated(-player.view_rotation)
+		Input.action_release("move_left")
+		Input.action_release("move_up")
+		Input.action_release("move_down")
+		Input.action_press("move_right", maxf(dir.x, 0.0))
+		Input.action_press("move_down" if dir.y > 0.0 else "move_up", absf(dir.y))
+		await wait_frames(1)
+		if not player.is_alive():
+			break
+	for a in ["move_left", "move_right", "move_up", "move_down"]:
+		Input.action_release(a)
+	check(not player.is_alive() and tracker.get_active_counters().has(&"RUSH"), "dying after running into it blocks RUSH")
+	await reload_room(true)
+	main = current_scene
+	guard = main.get_node("GruntGuard")
+
 	# 23. RUSH counter: run at it and it feints (one quick step back), then strikes.
 	player = main.get_node("Player")
 	main.get_node("GruntPatrol").free()
