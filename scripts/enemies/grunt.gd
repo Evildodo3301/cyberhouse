@@ -14,10 +14,14 @@ extends CharacterBody2D
 ## (TacticTracker.get_active_counters()) and switches on a counter for each.
 ## Adapted grunts have glowing eyes and call out the counter they use:
 ##   DOOR_AMBUSH -> "HOLD":    won't walk into a doorway you're waiting at.
-##   RUSH        -> "BACK":    backs away when you run at it (same speed as its chase).
-##   LONG_RANGE  -> "COVER":   hides behind walls while you hold a gun far away.
+##   RUSH        -> "FEINT":   when you run at it, one quick step back, then it
+##                             strikes: lunges at you or side-steps and punches.
+##   LONG_RANGE  -> "COVER":   hides behind a wall for a moment while you hold a
+##                             gun far away, then charges.
 ##   BOMB        -> "SCATTER": runs from a landed bomb and keeps apart from others.
-## Counters never change its speed, reaction time or reach.
+## Counters never change its reaction time or reach, and never make it retreat
+## for long: every back-off ends in an attack. Only the feint's short lunge is
+## faster than its chase.
 ##
 ## Doors: when you push open a door of its room, it turns to the door and
 ## goes ALERT, even before it can see you. Grunts with stays_in_room (most of
@@ -74,6 +78,14 @@ var _bark_time: float = 0.0
 var _cover_point: Vector2
 var _has_cover: bool = false
 var _cover_timer: float = 0.0
+## How long it has hidden this time, and the wait before it may hide again.
+var _cover_spent: float = 0.0
+var _cover_rest: float = 0.0
+## RUSH feint: 0 = none, 1 = stepping back, 2 = striking.
+var _feint_phase: int = 0
+var _feint_left: float = 0.0
+var _feint_cooldown: float = 0.0
+var _feint_side: float = 0.0   # 0 = straight lunge, -1/+1 = side-step that way
 var _flee_from: Vector2
 var _flee_time: float = 0.0
 var _home_room: int = -1
@@ -149,6 +161,8 @@ func _physics_process(delta: float) -> void:
 	else:
 		_unseen_time += delta
 	_bark_time = maxf(_bark_time - delta, 0.0)
+	_feint_cooldown = maxf(_feint_cooldown - delta, 0.0)
+	_cover_rest = maxf(_cover_rest - delta, 0.0)
 
 	if _flee_time > 0.0 and state != State.KNOCKED_DOWN:
 		_scatter(delta)
@@ -198,6 +212,9 @@ func _physics_process(delta: float) -> void:
 func _enter(new_state: State) -> void:
 	state = new_state
 	_state_time = 0.0
+	if _feint_phase != 0:   # any change of plan ends the feint
+		_feint_phase = 0
+		_feint_cooldown = settings.feint_cooldown
 	_arrived = false
 	_look_time = 0.0
 	if new_state == State.ATTACK:
@@ -441,7 +458,7 @@ func _near_door() -> bool:
 func _counter_move(player: Node2D, sees: bool, delta: float) -> bool:
 	if _hold_at_door(player):
 		return true
-	if counters(TacticTracker.RUSH) and sees and _back_off(player):
+	if counters(TacticTracker.RUSH) and sees and _feint(player, delta):
 		return true
 	if counters(TacticTracker.LONG_RANGE) and _take_cover(player, delta):
 		return true
@@ -474,28 +491,55 @@ func _hold_at_door(player: Node2D) -> bool:
 	return false
 
 
-## RUSH: when you run straight at it, it backs away, still facing you.
-## It only moves at its normal chase speed. Beat it: gun, bomb, or pin it to a wall.
-func _back_off(player: Node2D) -> bool:
-	var away := global_position - player.global_position
-	if away.length() > 64.0:
+## RUSH: a feint, never a retreat. When you run straight at it, it takes one
+## quick step back (still facing you), then strikes: a short lunge straight at
+## you, or a side-step round your swing and a punch. Its usual wind-up before
+## the hit stays, so you can still react. Then no feint for a while.
+func _feint(player: Node2D, delta: float) -> bool:
+	var to_player := player.global_position - global_position
+	if _feint_phase == 0:
+		if _feint_cooldown > 0.0 or to_player.length() > 64.0:
+			return false
+		if player.velocity.dot(-to_player.normalized()) < 40.0:
+			return false   # you aren't running at it
+		_feint_phase = 1
+		_feint_left = settings.feint_back_time
+		_feint_side = [0.0, -1.0, 1.0][randi() % 3]
+	_feint_left -= delta
+	facing = to_player.normalized()
+	if _feint_phase == 1:
+		velocity = -to_player.normalized() * settings.chase_speed
+		_bark("FEINT")
+		if _feint_left <= 0.0:
+			_feint_phase = 2
+			_feint_left = settings.feint_strike_time
+		return true
+	# Strike: lunge in, curving to one side if it's side-stepping.
+	var lunge := to_player.normalized()
+	if _feint_side != 0.0:
+		lunge = (lunge + lunge.orthogonal() * _feint_side * 0.9).normalized()
+	velocity = lunge * settings.chase_speed * settings.feint_lunge_speed
+	if _feint_left <= 0.0:
+		_feint_phase = 0
+		_feint_cooldown = settings.feint_cooldown
 		return false
-	var closing: float = player.velocity.dot(away.normalized())
-	if closing < 40.0:
-		return false
-	velocity = away.normalized() * settings.chase_speed
-	facing = -away.normalized()
-	_bark("BACK")
 	return true
 
 
-## LONG_RANGE: while you hold a gun and stand far away, it hides behind the
-## nearest wall and waits. Beat it: get close, or drop the gun and use fists.
+## LONG_RANGE: while you hold a gun and stand far away, it ducks behind the
+## nearest wall, but only for cover_max_time: then it charges you anyway.
+## Beat it: get close, wait for the charge, or use fists.
 func _take_cover(player: Node2D, delta: float) -> bool:
-	if player == null or not player.has_gun():
+	if player == null or not player.has_gun() or _cover_rest > 0.0:
 		return false
 	if global_position.distance_to(player.global_position) <= 64.0:
 		return false   # you're close now: charge
+	_cover_spent += delta
+	if _cover_spent >= settings.cover_max_time:
+		_cover_spent = 0.0
+		_cover_rest = settings.cover_cooldown
+		_bark("GO")
+		return false
 	_cover_timer -= delta
 	if _cover_timer <= 0.0:
 		_cover_timer = 0.5
