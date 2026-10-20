@@ -38,6 +38,14 @@ const THROW_ASSIST_RANGE := 120.0
 ## how many blows land (the kill comes with the last one).
 const FINISH_RANGE := 22.0
 const FINISH_TIME := 0.6
+## Attack motion (until the attack frames arrive): swings twist the torso
+## through the arc and lunge it forward; shots kick it back.
+const SWING_TWIST := 0.6     # radians either side of the aim
+const SWING_TIME := 0.1      # seconds the whip through the arc takes
+const SETTLE_TIME := 0.08    # then back to the aim
+const LUNGE := 3.5           # pixels forward at the hit
+const RECOIL := 2.0          # pixels back per shot
+const RECOIL_TIME := 0.08
 const FINISH_BLOWS := 3
 const CROSSHAIR_TEXTURE := preload("res://assets/ui/crosshair.png")
 
@@ -101,6 +109,7 @@ var _finish_time: float = 0.0
 var _finish_blows: int = 0
 var _stride: float = 0.0   # distance walked, drives the step animation
 var _muzzle_flash: float = 0.0   # seconds the flash at the barrel stays visible
+var _pose_time: float = -1.0   # seconds since the last strike or shot (-1 = at rest)
 var _fire_anim: float = -1.0   # seconds into the weapon's fire / swing frames (-1 = none)
 var _crosshair: Sprite2D
 var _sprite: Sprite2D        # arms, body and head, on the torso (turns with the aim)
@@ -224,10 +233,41 @@ func _update_facing() -> void:
 		facing = velocity.normalized()      # ...otherwise face where you walk
 
 
+## Code-driven attack motion. Melee: in the wind-up the torso twists back
+## to one side, at the hit it whips through to the other and lunges forward,
+## then settles. Gun: each shot kicks the torso (and the gun) back a little.
+func _update_attack_pose(delta: float) -> void:
+	var twist := 0.0
+	var shift := 0.0
+	if _pose_time >= 0.0:
+		_pose_time += delta
+	if has_gun():
+		if _pose_time >= 0.0 and _pose_time < RECOIL_TIME:
+			shift = -RECOIL * (1.0 - _pose_time / RECOIL_TIME)
+	elif _attack_state == AttackState.WINDUP and weapon.windup_time > 0.0:
+		var t := 1.0 - _attack_timer / weapon.windup_time
+		twist = -SWING_TWIST * t
+		shift = -1.0 * t
+	elif _pose_time >= 0.0 and _pose_time < SWING_TIME + SETTLE_TIME:
+		var t := _pose_time / SWING_TIME
+		if t < 1.0:
+			twist = lerpf(-SWING_TWIST, SWING_TWIST, ease(t, 0.4))   # fast whip
+			shift = LUNGE * sin(t * PI * 0.5)
+		else:
+			var back := 1.0 - (_pose_time - SWING_TIME) / SETTLE_TIME
+			twist = SWING_TWIST * back   # settle back to the aim
+			shift = LUNGE * back
+	if _pose_time >= SWING_TIME + SETTLE_TIME:
+		_pose_time = -1.0
+	_torso.rotation += twist
+	_torso.position = facing * shift
+
+
 ## Turns the two body parts. The torso snaps to the aim; the legs turn
 ## smoothly toward the way we move, and ignore the aim completely.
 func _update_body(delta: float) -> void:
 	_torso.rotation = facing.angle()   # angle() = atan2(y, x)
+	_update_attack_pose(delta)
 	var speed := velocity.length()
 	if speed > settings.legs_idle_speed:
 		# How far to turn this frame. Using exp() makes the turn feel the same
@@ -330,6 +370,7 @@ func _update_attack(delta: float) -> void:
 ## The moment the swing lands: hit every target inside the arc.
 func _strike() -> void:
 	_swing_flash = 0.08
+	_pose_time = 0.0
 	_start_fire_anim()
 	for target in _targets_in_swing(_attack_direction):
 		target.take_hit(self, _attack_direction, "melee")
@@ -374,6 +415,7 @@ func _auto_fire() -> void:
 func _fire() -> void:
 	ammo -= 1
 	_muzzle_flash = 0.05
+	_pose_time = 0.0
 	_start_fire_anim()
 	_light_time = LIGHT_TIME
 	for i in maxi(weapon.pellets, 1):
@@ -486,6 +528,7 @@ func _update_finisher(delta: float) -> void:
 	while _finish_blows < mini(due, FINISH_BLOWS):
 		_finish_blows += 1
 		_swing_flash = 0.06
+		_pose_time = 0.0
 		Game.shake(3.0, _attack_direction)
 	if _finish_blows >= FINISH_BLOWS:
 		var enemy := _finishing
@@ -752,9 +795,9 @@ func _draw_torso() -> void:
 	if _sprite:
 		if weapon.floor_texture and weapon != settings.start_weapon:
 			# Gun held out in both hands; a blade in the right hand.
-			var size := weapon.floor_texture.get_size()
+			var size := weapon.held_size()
 			var at := Vector2(4, -size.y / 2.0) if has_gun() else Vector2(1, 4 - size.y / 2.0)
-			_torso.draw_texture(weapon.floor_texture, at)
+			_torso.draw_texture_rect(weapon.floor_texture, Rect2(at, size), false)
 		elif has_gun():
 			_torso.draw_rect(Rect2(5, -1.25, 6, 2.5), weapon.color)   # held out in both hands
 		elif weapon != settings.start_weapon:

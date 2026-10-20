@@ -728,6 +728,12 @@ func _update_sprite(delta: float) -> void:
 		_sprite.frame = KNOCKED_FRAME
 		return
 	_sprite.rotation = facing.angle() + PI * 0.5
+	_sprite.position = facing * _attack_shift()
+	if state == State.ATTACK:
+		# Code-driven swing until the attack frames arrive: twist back in the
+		# wind-up, whip through at the hit.
+		var t := _state_time / maxf(settings.attack_windup, 0.01)
+		_sprite.rotation += -0.5 * minf(t, 1.0) if not _struck else lerpf(-0.5, 0.5, minf((t - 1.0) * 6.0, 1.0))
 	if state == State.ATTACK and not _struck:
 		_sprite.frame = PUNCH_FRAME
 	elif velocity.length() > 5.0:
@@ -735,6 +741,19 @@ func _update_sprite(delta: float) -> void:
 		_sprite.frame = int(_walked / stride_per_frame) % SHEET_COLUMNS
 	else:
 		_sprite.frame = 0
+
+
+## How far the body leans along `facing`: back in the wind-up, a lunge at
+## the hit, a kick back on each shot.
+func _attack_shift() -> float:
+	if _muzzle_time > 0.0:
+		return -2.0 * _muzzle_time / _muzzle_length()
+	if state != State.ATTACK:
+		return 0.0
+	if not _struck:
+		return -1.5 * minf(_state_time / maxf(settings.attack_windup, 0.01), 1.0)
+	var after := _state_time - settings.attack_windup
+	return 3.5 * maxf(1.0 - after / maxf(settings.attack_recovery, 0.01), 0.0)
 
 
 ## The corpse the gore layer paints when it dies (empty = placeholder shapes).
@@ -792,9 +811,9 @@ func _draw_overlay() -> void:
 		# The gun it will drop, held at its side.
 		var hand := facing.orthogonal() * 5.0 + facing * 6.0
 		if carried_weapon.floor_texture:
-			var size := carried_weapon.floor_texture.get_size()
-			o.draw_set_transform(hand, facing.angle())
-			o.draw_texture(carried_weapon.floor_texture, Vector2(0, -size.y / 2.0))
+			var size := carried_weapon.held_size()
+			o.draw_set_transform(hand + facing * _attack_shift(), facing.angle())
+			o.draw_texture_rect(carried_weapon.floor_texture, Rect2(Vector2(0, -size.y / 2.0), size), false)
 			o.draw_set_transform(Vector2.ZERO)
 		else:
 			o.draw_line(hand, hand + facing * 6.0, carried_weapon.color, 2.5)

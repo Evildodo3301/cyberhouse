@@ -751,5 +751,33 @@ func _initialize() -> void:
 	touch(0, Vector2(140, 250), false)
 	check(not guard.is_alive() and not player.is_finishing(), "after about 0.6 s the enemy is dead")
 
+	# 35. Attacks move the body; held weapons stay smaller than you.
+	await reload_room(false)
+	main = current_scene
+	player = main.get_node("Player")
+	player.global_position = Vector2(200, 200)
+	await wait_frames(2)
+	var torso: Node2D = player.get_node("Torso")
+	player.equip(load("res://data/weapons/machete.tres"), -1)
+	var widest_twist := 0.0
+	var furthest := 0.0
+	player.request_attack(Vector2.RIGHT)
+	for i in 20:
+		await physics_frame
+		widest_twist = maxf(widest_twist, absf(angle_difference(torso.rotation, player.facing.angle())))
+		furthest = maxf(furthest, torso.position.dot(player.facing))
+	check(widest_twist > 0.4 and furthest > 2.0, "a swing twists the torso and lunges (%.2f rad, %.1f px)" % [widest_twist, furthest])
+	await wait_frames(10)
+	check(torso.position.length() < 0.01 and absf(angle_difference(torso.rotation, player.facing.angle())) < 0.01, "then it settles back to the aim")
+	player.equip(load("res://data/weapons/pistol.tres"), 8)
+	var kicked := 0.0
+	player.request_attack(Vector2.RIGHT)
+	for i in 6:
+		await physics_frame
+		kicked = minf(kicked, torso.position.dot(player.facing))
+	check(kicked < -1.0, "a shot kicks you back (%.1f px)" % kicked)
+	var big_gun: WeaponData = load("res://data/weapons/machine_gun.tres")
+	check(big_gun.held_size().x <= 10.0, "the biggest held gun is shorter than you are wide (%.0f px)" % big_gun.held_size().x)
+
 	print("\n%s (%d failure(s))" % ["ALL PASSED" if failures == 0 else "SOME FAILED", failures])
 	quit(failures)

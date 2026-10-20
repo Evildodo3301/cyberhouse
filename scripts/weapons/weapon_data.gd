@@ -65,6 +65,20 @@ enum Kind { MELEE, GUN }
 @export var fire_fps: float = 60.0
 
 
+## Size to draw the floor sprite at when it's held: never longer than
+## HELD_MAX_LENGTH px, so even the machine gun stays smaller than the body
+## (about 14 px across the shoulders).
+const HELD_MAX_LENGTH := 10.0
+const HELD_MAX_SCALE := 0.6
+
+
+func held_size() -> Vector2:
+	if floor_texture == null:
+		return Vector2.ZERO
+	var size := floor_texture.get_size()
+	return size * minf(HELD_MAX_SCALE, HELD_MAX_LENGTH / size.x)
+
+
 ## Frame `index` of a strip of `count` frames laid side by side.
 static func frame_rect(texture: Texture2D, count: int, index: int) -> Rect2:
 	var w := texture.get_width() / float(count)
