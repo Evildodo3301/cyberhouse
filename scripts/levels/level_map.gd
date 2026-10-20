@@ -16,6 +16,7 @@ extends Node2D
 ##   u  machine gun on the floor
 ##   V  civilian grunt with a pistol (looks like a cop for now, so the
 ##      player is the only one in pink; shoots, drops the pistol)
+##   K  doberman: patrols, bites, carries nothing
 ##   E  exit (opens once every enemy is dead)
 ##
 ## Rooms are worked out automatically: floor areas separated by walls and
@@ -121,6 +122,15 @@ enum WallStyle { NEON, PLASTER }
 ## the level's file name, so the carpets stay put on every retry.
 @export var rug_seed: int = 0
 
+@export_group("Enemies")
+## Tuning for the enemies this map spawns (empty = each keeps its own).
+@export var enemy_settings: EnemySettings
+## Tuning for the dobermans ("K").
+@export var dog_settings: EnemySettings
+## Share of human enemies (0 to 1) that walk a patrol round their room instead
+## of standing guard. Dogs always patrol. Which ones is fixed per level.
+@export_range(0.0, 1.0) var patrol_share: float = 0.0
+
 ## Size of the level in pixels.
 var size_px: Vector2
 var _rows: PackedStringArray
@@ -128,6 +138,7 @@ var _room_of_tile: Dictionary = {}   # Vector2i -> room index
 var _walls: Array[Rect2] = []
 var _floor_tiles: Array[Vector2i] = []
 var _brick_rooms: Dictionary = {}   # room index -> true
+var _solid_rects: Array[Rect2] = []   # solid furniture, for patrol routes
 var _room_floor: Dictionary = {}    # room index -> "marble", "dark_marble" or "bath"
 
 
@@ -370,6 +381,7 @@ func _place_furniture() -> void:
 			piece.z_index = -1   # rugs: on the floor, under the blood
 		add_child(piece)
 		if solid:
+			_solid_rects.append(Rect2(piece.position, region.size))
 			var body := StaticBody2D.new()
 			body.collision_layer = 1
 			body.collision_mask = 0
@@ -411,7 +423,10 @@ func _build_doorways() -> void:
 
 
 func _spawn_things() -> void:
-	var count := {"C": 0, "V": 0, "M": 0, "F": 0, "G": 0, "g": 0, "m": 0, "u": 0}
+	var count := {"C": 0, "V": 0, "M": 0, "F": 0, "G": 0, "K": 0, "g": 0, "m": 0, "u": 0}
+	var rng := RandomNumberGenerator.new()
+	var level := get_parent()
+	rng.seed = hash((level.scene_file_path if level else "") + "patrols")
 	for at in _floor_tiles:
 		var letter := tile(at)
 		var spot := _tile_center(at)
@@ -422,11 +437,20 @@ func _spawn_things() -> void:
 					player = get_parent().get_node_or_null("Player")
 				if player:
 					player.global_position = spot
-			"C", "V", "M", "F", "G":
+			"C", "V", "M", "F", "G", "K":
 				count[letter] += 1
 				var grunt: Node2D = GRUNT_SCENE.instantiate()
-				grunt.name = {"C": "Cop%d", "V": "Civilian%d", "M": "Thug%d", "F": "Brawler%d", "G": "Gunner%d"}[letter] % count[letter]
+				grunt.name = {"C": "Cop%d", "V": "Civilian%d", "M": "Thug%d", "F": "Brawler%d", "G": "Gunner%d", "K": "Dog%d"}[letter] % count[letter]
 				grunt.position = spot
+				if enemy_settings:
+					grunt.settings = enemy_settings
+				if letter == "K":
+					grunt.is_dog = true
+					grunt.sheet = null   # placeholder dog until its art arrives
+					grunt.body_color = Color(0.13, 0.09, 0.08)
+					grunt.carried_weapon = null
+					if dog_settings:
+						grunt.settings = dog_settings
 				if letter == "M":
 					grunt.carried_weapon = MACHETE
 				elif letter == "G":
@@ -434,9 +458,11 @@ func _spawn_things() -> void:
 				elif letter == "F":
 					grunt.carried_weapon = null   # fists only, drops nothing
 				# Every 1/roam_chance-th enemy (in map order) is a roamer.
-				var index: int = count["C"] + count["V"] + count["M"] + count["F"] + count["G"]
+				var index: int = count["C"] + count["V"] + count["M"] + count["F"] + count["G"] + count["K"]
 				grunt.stays_in_room = floori(index * roam_chance) == floori((index - 1) * roam_chance)
 				grunt.start_facing_degrees = rad_to_deg(spot.angle_to_point(_room_center(at)))
+				if letter == "K" or rng.randf() < patrol_share:
+					grunt.patrol_points = _patrol_route(at, rng)
 				add_child(grunt)
 			"g":
 				count["g"] += 1
@@ -475,6 +501,42 @@ func _spawn_things() -> void:
 
 
 ## The middle of the room a tile belongs to (guards face into their room).
+## A patrol round the room from `start`: the start, then two or three spots in
+## the same room, each well clear of walls and solid furniture and at least
+## 5 tiles from the last, so its back is turned to part of the room as it walks.
+func _patrol_route(start: Vector2i, rng: RandomNumberGenerator) -> Array[Vector2]:
+	var room: int = _room_of_tile.get(start, -1)
+	var spots: Array[Vector2i] = []
+	for at in _room_of_tile:
+		if _room_of_tile[at] == room and _clear_spot(at):
+			spots.append(at)
+	var route: Array[Vector2] = [_tile_center(start)]
+	var want := rng.randi_range(2, 3)
+	for i in 30:
+		if route.size() > want or spots.is_empty():
+			break
+		var pick: Vector2i = spots[rng.randi() % spots.size()]
+		var at := _tile_center(pick)
+		var far_enough := route.all(func(p: Vector2): return p.distance_to(at) >= tile_px * 5.0)
+		if far_enough and at.distance_to(route[0]) <= tile_px * 16.0:
+			route.append(at)
+	return route if route.size() > 1 else [] as Array[Vector2]
+
+
+## True if a character can stand on this tile: every tile round it is floor
+## of a room, and no solid furniture is within 6 px.
+func _clear_spot(at: Vector2i) -> bool:
+	for y in range(-1, 2):
+		for x in range(-1, 2):
+			if not _room_of_tile.has(at + Vector2i(x, y)):
+				return false
+	var body := Rect2(_tile_center(at) - Vector2(6, 6), Vector2(12, 12))
+	for rect in _solid_rects:
+		if rect.intersects(body):
+			return false
+	return true
+
+
 func _room_center(at: Vector2i) -> Vector2:
 	var room: int = _room_of_tile.get(at, -1)
 	var total := Vector2.ZERO

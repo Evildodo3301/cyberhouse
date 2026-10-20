@@ -28,7 +28,15 @@ extends CharacterBody2D
 ## than its chase: the feint's lunge and the charge when it closes in.
 ##
 ## Doors: when you push open a door of its room, it turns to the door and
-## goes ALERT, even before it can see you. Grunts with stays_in_room (most of
+## goes ALERT, even before it can see you (unless door_alert_needs_sight is
+## on and the door is behind its back).
+##
+## Sneaking: with notice_whole_room off it only sees what is in its vision
+## cone (or right behind it, close_awareness_range). Walk up behind a
+## patrolling enemy and it never knows you were there.
+##
+## Dogs (is_dog): dobermans. Fast, bite up close, no weapon, no learned
+## counters; they growl "GRR" the moment they spot you. Grunts with stays_in_room (most of
 ## them in early levels) never step out of their own room: they chase you to
 ## their doorway and wait there.
 
@@ -62,6 +70,8 @@ enum State { PATROL, ALERT, CHASE, ATTACK, SEARCH, KNOCKED_DOWN, DEAD, AIM }
 @export var carried_weapon: WeaponData
 ## If on, it never leaves the room it starts in (LevelMap sets this).
 @export var stays_in_room: bool = false
+## A doberman: placeholder dog body, bites, carries nothing, never adapts.
+@export var is_dog: bool = false
 ## Eye glow used by M3 to show an enemy has adapted. Transparent = none.
 @export var tell_color: Color = Color(0, 0, 0, 0)
 
@@ -137,7 +147,9 @@ func _ready() -> void:
 	_home_facing = facing
 	last_known_position = global_position
 	Game.noise_made.connect(_on_noise_made)
-	active_counters = TacticTracker.get_active_counters()
+	if is_dog:
+		carried_weapon = null   # dogs bite; nothing to drop
+	active_counters = [] if is_dog else TacticTracker.get_active_counters()
 	if not active_counters.is_empty():
 		tell_color = TacticTracker.settings.adapted_eye_color
 	Game.bomb_landed.connect(_on_bomb_landed)
@@ -207,6 +219,8 @@ func _physics_process(delta: float) -> void:
 			_patrol()
 			if sees:
 				_enter(State.ALERT)
+				if is_dog:
+					_bark("GRR")
 		State.ALERT:
 			# Stops and turns to you: this pause is your chance to strike first.
 			velocity = Vector2.ZERO
@@ -294,6 +308,17 @@ func _can_see(player: Node2D) -> bool:
 	return get_world_2d().direct_space_state.intersect_ray(query).is_empty()
 
 
+## True if `point` is in the vision cone, in range and not behind a wall.
+func _can_see_point(point: Vector2) -> bool:
+	var to_point := point - global_position
+	if to_point.length() > settings.vision_range:
+		return false
+	if absf(rad_to_deg(facing.angle_to(to_point))) > settings.vision_degrees * 0.5:
+		return false
+	var query := PhysicsRayQueryParameters2D.create(global_position, point, 1)
+	return get_world_2d().direct_space_state.intersect_ray(query).is_empty()
+
+
 func _on_noise_made(at: Vector2, loudness: float) -> void:
 	if state in [State.DEAD, State.ATTACK, State.AIM, State.KNOCKED_DOWN]:
 		return
@@ -317,6 +342,8 @@ func _on_door_opened(door: Node2D, opener: Node2D) -> void:
 	var across: Vector2 = Vector2.from_angle(door.global_rotation).orthogonal() * 16.0
 	var my_room: int = level.room_at(global_position)
 	if my_room != level.room_at(door_center + across) and my_room != level.room_at(door_center - across):
+		return
+	if settings.door_alert_needs_sight and not _can_see_point(door_center):
 		return
 	last_known_position = door_center
 	facing = global_position.direction_to(door_center)
@@ -730,6 +757,7 @@ func _scatter(delta: float) -> void:
 ## lying pose when knocked down. The sheet faces up, so turn by +90 degrees.
 func _update_sprite(delta: float) -> void:
 	if _sprite == null:
+		_walked += velocity.length() * delta   # the placeholder dog's legs
 		return
 	if state == State.KNOCKED_DOWN:
 		_sprite.frame = KNOCKED_FRAME
@@ -819,6 +847,9 @@ func _draw() -> void:
 		draw_colored_polygon(cone, Color(1, 0.2, 0.2, 0.07) if alert else Color(1, 1, 1, 0.04))
 	if _sprite:
 		return   # the sprite shows the body
+	if is_dog:
+		_draw_dog(angle)
+		return
 	if state == State.KNOCKED_DOWN:
 		# Lying on the floor.
 		draw_set_transform(Vector2.ZERO, angle)
@@ -828,6 +859,36 @@ func _draw() -> void:
 		return
 	draw_circle(Vector2.ZERO, 7.0, body_color)
 	draw_line(Vector2.ZERO, facing * 9.0, Color(0.1, 0.1, 0.1), 3.0)
+
+
+## Placeholder doberman (until the Creative Director's art): a long dark
+## body with tan legs and snout, pointy ears, a short tail; it lies on its
+## side when knocked down. Drawn pointing along +x, then turned.
+func _draw_dog(angle: float) -> void:
+	var coat := body_color
+	var tan := Color(0.72, 0.45, 0.22)
+	var outline := Color(0.05, 0.03, 0.03)
+	draw_set_transform(Vector2.ZERO, angle)
+	if state == State.KNOCKED_DOWN:
+		draw_set_transform(Vector2.ZERO, angle, Vector2(1.0, 1.4))
+	var step := sin(_walked * 0.6) * 2.0 if velocity.length() > 5.0 else 0.0
+	for leg in [Vector2(5, 3.5), Vector2(5, -3.5), Vector2(-5, 3.5), Vector2(-5, -3.5)]:
+		var swing: float = step if (leg.x > 0) == (leg.y > 0) else -step
+		draw_circle(leg + Vector2(swing, signf(leg.y) * 0.8), 1.4, tan)
+	draw_set_transform(Vector2.ZERO, angle, Vector2(1.0, 0.55) if state != State.KNOCKED_DOWN else Vector2(1.0, 0.8))
+	draw_circle(Vector2.ZERO, 8.0, outline)
+	draw_circle(Vector2.ZERO, 7.0, coat)
+	draw_set_transform(Vector2.ZERO, angle)
+	draw_line(Vector2(-7, 0), Vector2(-11, 0), coat, 2.0)   # tail
+	draw_circle(Vector2(8, 0), 3.6, outline)                 # head
+	draw_circle(Vector2(8, 0), 3.0, coat)
+	draw_circle(Vector2(11, 0), 1.6, tan)                    # snout
+	draw_colored_polygon(PackedVector2Array([Vector2(6, -2), Vector2(4, -5), Vector2(8, -2.5)]), coat)   # ears
+	draw_colored_polygon(PackedVector2Array([Vector2(6, 2), Vector2(4, 5), Vector2(8, 2.5)]), coat)
+	if state in [State.ALERT, State.CHASE, State.ATTACK]:
+		draw_circle(Vector2(9, -1.2), 0.7, Color(1, 0.2, 0.15))   # angry eyes
+		draw_circle(Vector2(9, 1.2), 0.7, Color(1, 0.2, 0.15))
+	draw_set_transform(Vector2.ZERO, 0.0)
 
 
 ## How long the muzzle fire shows: the art's frames, or a quick flash.

@@ -29,7 +29,9 @@ func _initialize() -> void:
 	var t := func(x: int, y: int) -> Vector2: return (Vector2(x, y) + Vector2(0.5, 0.5)) * 8.0   # tile centre
 	check(map.tile_px == 8, "thin walls: 8 px tiles")
 	check(map.room_count() == 11, "a house of 11 rooms (%d)" % map.room_count())
-	check(enemies.size() == 12, "12 enemies")
+	var dogs := enemies.filter(func(e): return e.is_dog)
+	var people := enemies.filter(func(e): return not e.is_dog)
+	check(enemies.size() == 10 and dogs.size() == 2, "an easy first level: 8 enemies and 2 dobermans (%d, %d dogs)" % [enemies.size(), dogs.size()])
 	var doors := root.get_tree().get_nodes_in_group("doors")
 	check(doors.size() == 11 and doors.all(func(d): return d.length == 32.0), "11 small doors (32 px)")
 	var pickups := root.get_tree().get_nodes_in_group("pickups")
@@ -60,10 +62,18 @@ func _initialize() -> void:
 	check(fancy_rooms.size() == map.room_count(), "fancy furniture in every room (%d of %d)" % [fancy_rooms.size(), map.room_count()])
 	var leopard = map.get_children().filter(func(c): return c is Sprite2D and c.name == "LeopardRug")
 	check(leopard.size() == 1 and leopard[0].z_index == -1, "the leopard rug lies under the blood")
-	check(enemies.all(func(e): return e.sheet.resource_path.ends_with("cop_suit.png")), "every enemy wears a black suit")
+	check(people.all(func(e): return e.sheet.resource_path.ends_with("cop_suit.png")), "every enemy wears a black suit")
+	check(dogs.all(func(e): return e.sheet == null and e.carried_weapon == null and e.active_counters.is_empty()), "dogs: placeholder body, no weapon, no learned counters")
 	var thugs := enemies.filter(func(e): return e.carried_weapon and e.carried_weapon.id == &"machete")
-	check(thugs.size() == 4, "4 enemies carry a machete")
-	check(enemies.filter(func(e): return e.has_gun()).size() == 4, "4 of the 12 enemies have guns and shoot")
+	check(thugs.size() == 3, "3 enemies carry a machete")
+	check(enemies.filter(func(e): return e.has_gun()).size() == 2, "only 2 enemies have guns")
+	check(people.all(func(e): return not e.settings.notice_whole_room and e.settings.reaction_time >= 0.35), "enemies only see what's in front of them, and react a bit slower")
+	# Patrols: dogs and most enemies walk a round inside their own room.
+	var patrollers := enemies.filter(func(e): return e.patrol_points.size() >= 2)
+	print("      patrols: ", patrollers.map(func(e): return "%s:%d" % [e.name, e.patrol_points.size()]))
+	check(dogs.all(func(e): return e.patrol_points.size() >= 2), "dogs patrol")
+	check(patrollers.size() >= 6, "most enemies patrol (%d of 10)" % patrollers.size())
+	check(patrollers.all(func(e): return e.patrol_points.all(func(p): return map.room_at(p) == e._home_room)), "every patrol stays in its room")
 	check(enemies.filter(func(e): return e.carried_weapon and e.carried_weapon.id == &"machine_gun").size() == 1, "one enemy has a machine gun")
 	check(pickups.filter(func(p): return p.weapon.id == &"machine_gun").size() == 1, "a machine gun lies in the house")
 	# Gang carpets: a rug in each big room, a mat at every door, all three designs used.
@@ -94,24 +104,65 @@ func _initialize() -> void:
 
 	var roamers := enemies.filter(func(e): return not e.stays_in_room)
 	print("      roamers: ", roamers.map(func(e): return e.name))
-	check(roamers.size() >= 1 and roamers.size() <= 3, "only a few enemies may leave their room (%d of 12)" % roamers.size())
+	check(roamers.size() >= 1 and roamers.size() <= 3, "only a few enemies may leave their room (%d of 10)" % roamers.size())
 
-	# Push the hall's door open: the two in the living room behind it react at once.
+	# Sneaking: an enemy with its back to you doesn't notice you; step in front and it does.
 	var living: int = map.room_at(t.call(30, 40))
-	var behind_door := enemies.filter(func(e): return map.room_at(e.global_position) == living)
-	check(behind_door.size() == 2 and behind_door.all(func(e): return e.state == 0), "the living room starts calm")
+	var sentry = enemies.filter(func(e): return map.room_at(e.global_position) == living)[0]
+	sentry.patrol_points = [] as Array[Vector2]
+	sentry._home = t.call(36, 40)
+	sentry._home_facing = Vector2.RIGHT
+	sentry.global_position = sentry._home
+	sentry.facing = Vector2.RIGHT
+	sentry._enter(0)
+	player.global_position = t.call(32, 40)   # 32 px behind it
+	await wait_frames(20)
+	check(sentry.state == 0, "you can stand right behind an enemy that hasn't seen you")
+	player.global_position = t.call(30, 40)
+	await wait_frames(1)
+	player.request_attack(Vector2.RIGHT)
+	for i in 6:
+		player.global_position = player.global_position.move_toward(sentry.global_position - Vector2(16, 0), 4.0)
+		await physics_frame
+	player.request_attack(Vector2.RIGHT)
+	await wait_frames(20)
+	check(not sentry.is_alive(), "sneak up behind it and take it out before it turns")
+	var watcher = enemies.filter(func(e): return e.is_alive() and map.room_at(e.global_position) == map.room_at(t.call(36, 6)))[0]
+	watcher.patrol_points = [] as Array[Vector2]
+	watcher._home = watcher.global_position
+	watcher._home_facing = Vector2.LEFT
+	watcher.facing = Vector2.LEFT
+	watcher._enter(0)
+	player.global_position = watcher.global_position + Vector2(-48, 0)   # in front, in its cone
+	await wait_frames(3)
+	check(watcher.state in [1, 2], "step in front of an enemy and it notices you")
+	player.global_position = t.call(6, 58)
+	await wait_frames(30)
+
+	# Doors: opening one only alerts an enemy that is looking at it.
+	var hall_door = doors.filter(func(d): return map.room_at(d.center() + Vector2(24, 0)) == living and absf(d.center().y - t.call(0, 58).y) < 24.0)
+	check(hall_door.size() == 1, "found the hall door")
+	var guard = load("res://scenes/enemies/grunt.tscn").instantiate()
+	guard.settings = load("res://data/easy_grunt_settings.tres")
+	guard.position = t.call(26, 58)
+	guard.start_facing_degrees = 0.0   # back to the door
+	level.get_node("LevelMap").add_child(guard)
+	await wait_frames(2)
 	player.global_position = t.call(13, 57)
 	await wait_frames(4)
-	check(behind_door.all(func(e): return e.state in [1, 2]), "opening the door alerts the room behind it")
-	var far_room := enemies.filter(func(e): return map.room_at(e.global_position) == map.room_at(t.call(90, 10)))
-	check(far_room.size() > 0 and far_room.all(func(e): return e.state == 0), "rooms away from the door stay calm")
-
-	# Step into the bathroom: its cop notices you at once.
-	var bathroom_spot: Vector2 = t.call(36, 6)
-	var bather = enemies.filter(func(e): return map.room_at(e.global_position) == map.room_at(bathroom_spot))[0]
-	player.global_position = bathroom_spot
-	await wait_frames(3)
-	check(bather.state == 1, "entering a room alerts its enemy")
+	check(guard.state == 0, "a door opening behind an enemy's back goes unnoticed")
+	player.global_position = t.call(6, 58)
+	await wait_frames(60)
+	guard._home_facing = Vector2.LEFT
+	guard.facing = Vector2.LEFT
+	player.global_position = t.call(13, 57)
+	await wait_frames(4)
+	check(guard.state in [1, 2], "an enemy watching the door reacts when it opens")
+	guard.take_hit(player, Vector2.RIGHT, "melee")
+	player.global_position = t.call(6, 58)
+	await wait_frames(30)
+	var far_room := enemies.filter(func(e): return e.is_alive() and map.room_at(e.global_position) == map.room_at(t.call(90, 10)))
+	check(far_room.size() > 0 and far_room.all(func(e): return e.state == 0), "rooms away from you stay calm")
 
 	# Weapons: walk onto the machete, then onto a pistol: you switch each time,
 	# and what you held drops at your feet (and isn't grabbed straight back).

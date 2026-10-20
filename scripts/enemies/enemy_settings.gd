@@ -29,6 +29,10 @@ extends Resource
 @export var vision_range: float = 128.0
 ## It also notices you this close, even behind its back.
 @export var close_awareness_range: float = 16.0
+## When on, a door you open only alerts it if it can see that door (it is
+## in its vision cone and nothing is in between), so you can slip in behind
+## its back. Off = any door of its room alerts it.
+@export var door_alert_needs_sight: bool = false
 ## How far a noise of loudness 1.0 carries.
 @export var hearing_range: float = 600.0
 ## After losing sight of you for this long, it starts searching.

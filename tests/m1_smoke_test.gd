@@ -822,5 +822,44 @@ func _initialize() -> void:
 	check(rest_glints >= 2 and rest_glints <= 3, "at rest it glints every couple of seconds (%d in 5 s)" % rest_glints)
 	check(move_glints >= 10, "while it moves it keeps glinting (%d in 5 s)" % move_glints)
 
+	# 37. A doberman: growls when it spots you, runs you down faster than you
+	# can run, bites; one hit kills it and it drops nothing.
+	await reload_room(false)
+	main = current_scene
+	player = main.get_node("Player")
+	player.global_position = Vector2(150, 285)
+	var dog = load("res://scenes/enemies/grunt.tscn").instantiate()
+	dog.is_dog = true
+	dog.sheet = null
+	dog.settings = load("res://data/dog_settings.tres")
+	dog.position = Vector2(250, 285)
+	dog.start_facing_degrees = 180.0
+	main.add_child(dog)
+	await wait_frames(3)
+	check(dog.state == 1 and dog._bark_text == "GRR", "the dog growls when it spots you")
+	check(dog.settings.chase_speed > player.settings.move_speed, "it runs faster than you")
+	var bitten := false
+	for i in 120:
+		await physics_frame
+		if not player.is_alive():
+			bitten = true
+			break
+	check(bitten, "it runs you down and bites")
+	await reload_room(false)
+	main = current_scene
+	player = main.get_node("Player")
+	dog = load("res://scenes/enemies/grunt.tscn").instantiate()
+	dog.is_dog = true
+	dog.sheet = null
+	dog.settings = load("res://data/dog_settings.tres")
+	dog.position = player.global_position + Vector2(20, 0)
+	main.add_child(dog)
+	await wait_frames(2)
+	var old_pickups := get_nodes_in_group("pickups")
+	dog.take_hit(player, Vector2.RIGHT, "melee")
+	await wait_frames(10)
+	var dropped_by_dog := get_nodes_in_group("pickups").filter(func(p): return not old_pickups.has(p))
+	check(not dog.is_alive() and dropped_by_dog.is_empty(), "one hit kills it and it drops nothing")
+
 	print("\n%s (%d failure(s))" % ["ALL PASSED" if failures == 0 else "SOME FAILED", failures])
 	quit(failures)
