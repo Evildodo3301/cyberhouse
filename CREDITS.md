@@ -19,6 +19,14 @@
   Licence: commercial and non-commercial use, may be modified; no resale or
   redistribution, even modified; no AI or NFT use. Credit not stated as required.
 
+## Supplied by the Creative Director
+
+- **The hero** (`assets/characters/hero_torso.png`, `hero_legs.png`,
+  `hero_dead.png`): frames cut from Fianso's AI-made hero preview and
+  finished by the Art Director. Logged as Fianso-supplied AI art (AI art
+  can't be copyrighted; stores may ask for AI disclosure). The player's
+  attack-arm frames are recoloured to match.
+
 ## Everything else
 
 Code, crosshair (from the Creative Director's design), weapon art

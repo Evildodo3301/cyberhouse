@@ -52,7 +52,7 @@ func _initialize() -> void:
 	check(stuck.is_empty(), "every enemy has a path to the start %s" % [stuck])
 
 	# Looks: the player wears the pink sheet, every enemy the cop sheet.
-	check(player._sprite != null and player._sprite.texture.resource_path.ends_with("player_torso.png"), "the player wears the pink template torso")
+	check(player._sprite != null and player._sprite.texture.resource_path.ends_with("hero_torso.png"), "the player is the new hero")
 	check(player._legs_sprite != null and player._legs_sprite.get_parent().name == "Legs", "the template's feet are on the legs (they turn apart)")
 	var pieces := map.get_children().filter(func(c): return c is Sprite2D and (c.region_enabled or c.is_in_group("fancy_furniture")))
 	check(pieces.size() >= 80, "lots of furniture (%d pieces)" % pieces.size())

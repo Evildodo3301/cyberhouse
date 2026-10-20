@@ -55,14 +55,18 @@ const CROSSHAIR_TEXTURE := preload("res://assets/ui/crosshair.png")
 @export var accent_color: Color = Color(0.16, 0.94, 1.0) # neon cyan
 
 @export_group("Look")
-## Sprite sheets: the comedylife top-down character template (one row of
-## 38 frames, 64 x 64, drawn facing up), recoloured pink and cyan and split
-## in two so the legs and torso can turn apart. Empty = placeholder shapes.
-## Frames: 0-1 idle, 2-11 walk, 12-23 rifle, 24-35 pistol, 36-37 die.
-@export var torso_sheet: Texture2D = preload("res://assets/characters/player_torso.png")
-@export var legs_sheet: Texture2D = preload("res://assets/characters/player_legs.png")
-## The whole body in one sheet, used for the corpse.
-@export var body_sheet: Texture2D = preload("res://assets/characters/player_body.png")
+## Sprite sheets: one row of 38 frames, 64 x 64, drawn facing up.
+## Frames: 0-1 idle, 2-11 walk, 12-23 melee, 24-35 pistol, 36-37 die.
+## The hero's frames are full-body (legs included), so his legs sheet is
+## empty; a sheet split into torso and legs also works (they turn apart).
+## Empty = placeholder shapes.
+@export var torso_sheet: Texture2D = preload("res://assets/characters/hero_torso.png")
+@export var legs_sheet: Texture2D = preload("res://assets/characters/hero_legs.png")
+## The body left on the floor: a single 64 x 64 dead pose, or a full
+## 38-frame sheet (then its die frame is used).
+@export var body_sheet: Texture2D = preload("res://assets/characters/hero_dead.png")
+## A thin outline round the player only, so you spot yourself at once.
+@export var outline_color: Color = Color("3ce0c8")
 ## Sheet pixels to room pixels (same as the enemies).
 @export var sprite_scale: float = 0.6
 ## Room pixels walked per walk-cycle frame.
@@ -885,6 +889,7 @@ func _make_sprite(texture: Texture2D) -> Sprite2D:
 	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	var material := ShaderMaterial.new()
 	material.shader = preload("res://shaders/outline.gdshader")
+	material.set_shader_parameter("outline_color", outline_color)
 	sprite.material = material
 	return sprite
 
@@ -893,5 +898,6 @@ func _make_sprite(texture: Texture2D) -> Sprite2D:
 func _corpse() -> Dictionary:
 	if body_sheet == null:
 		return {}
-	var region := Rect2(DIE_FRAMES[1] * 64, 0, 64, 64)
+	var frame: int = 0 if body_sheet.get_width() <= 64 else DIE_FRAMES[1]
+	var region := Rect2(frame * 64, 0, 64, 64)
 	return {"texture": body_sheet, "region": region, "burst_region": region, "scale": sprite_scale}
