@@ -52,8 +52,14 @@ func _initialize() -> void:
 	# Looks: the player wears the pink sheet, every enemy the cop sheet.
 	check(player._sprite != null and player._sprite.texture.resource_path.ends_with("player_torso.png"), "the player wears the pink template torso")
 	check(player._legs_sprite != null and player._legs_sprite.get_parent().name == "Legs", "the template's feet are on the legs (they turn apart)")
-	var pieces := map.get_children().filter(func(c): return c is Sprite2D and c.region_enabled)
-	check(pieces.size() >= 30, "furniture in every room (%d pieces)" % pieces.size())
+	var pieces := map.get_children().filter(func(c): return c is Sprite2D and (c.region_enabled or c.is_in_group("fancy_furniture")))
+	check(pieces.size() >= 80, "lots of furniture (%d pieces)" % pieces.size())
+	var fancy_rooms := {}
+	for piece in root.get_tree().get_nodes_in_group("fancy_furniture"):
+		fancy_rooms[map.room_at(piece.position + piece.texture.get_size() * 0.5)] = true
+	check(fancy_rooms.size() == map.room_count(), "fancy furniture in every room (%d of %d)" % [fancy_rooms.size(), map.room_count()])
+	var leopard = map.get_children().filter(func(c): return c is Sprite2D and c.name == "LeopardRug")
+	check(leopard.size() == 1 and leopard[0].z_index == -1, "the leopard rug lies under the blood")
 	check(enemies.all(func(e): return e.sheet.resource_path.ends_with("cop_suit.png")), "every enemy wears a black suit")
 	var thugs := enemies.filter(func(e): return e.carried_weapon and e.carried_weapon.id == &"machete")
 	check(thugs.size() == 4, "4 enemies carry a machete")

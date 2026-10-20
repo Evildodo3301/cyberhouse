@@ -23,7 +23,8 @@ extends Node2D
 ##
 ## Furniture goes in a second list, one item per line: "sofa 17 1" puts a
 ## sofa with its top-left corner on tile (17, 1). "floor_brick 5 5" gives
-## the room around tile (5, 5) a brick floor (kitchens, bathrooms); other
+## the room around tile (5, 5) a brick floor; "floor_marble",
+## "floor_dark_marble" and "floor_bath" give it a fancy floor; other
 ## rooms get wood. Solid pieces block you,
 ## enemies and bullets (enemies path round them); rugs are floor decoration.
 ## Art: Pixel 16 Interiors (free version) by zedpxl, see CREDITS.md.
@@ -68,6 +69,17 @@ const GANG_DOORMATS := [
 	preload("res://assets/levels/rugs/doormat-B-wire-crown-28x16.png"),
 	preload("res://assets/levels/rugs/doormat-C-static-saints-28x16.png"),
 ]
+## The fancy house furniture (our own, one file each in
+## res://assets/levels/furniture/): whether it is solid. These names win
+## over the interiors sheet's when both have one (plant, chair, desk).
+const FANCY_FURNITURE := {
+	"leopard_rug": false, "leopard_cushion": false,
+	"white_sofa_long": true, "white_sofa_side": true, "glass_table": true,
+	"tv_wall": true, "vinyl_cabinet": true, "piano": true, "desk": true,
+	"chair": true, "bar_counter": true, "bar_stool": true, "gold_lamp": true,
+	"plant": true, "statue": true, "kitchen_counter": true, "kitchen_sink": true,
+	"stove": true, "fridge": true, "bathtub": true, "toilet": true,
+}
 ## Floor tiles in the interiors sheet. Rooms take turns: wood, brick, wood...
 const WOOD_TILES := [Rect2(96, 48, 16, 16), Rect2(112, 48, 16, 16)]
 const BRICK_TILES := [Rect2(48, 32, 16, 16), Rect2(48, 48, 16, 16)]
@@ -265,7 +277,7 @@ func _place_gang_rugs() -> void:
 	rooms.sort()
 	for room in rooms:
 		var tiles: Array = tiles_of_room[room]
-		if tiles.size() < rug_min_tiles:
+		if tiles.size() < rug_min_tiles or _rooms_with_own_rug().has(room):
 			continue
 		var middle := Vector2.ZERO
 		for at in tiles:
@@ -289,6 +301,16 @@ func _place_gang_rugs() -> void:
 		var side := along.orthogonal() * (1.0 if rng.randf() < 0.5 else -1.0)
 		var spot: Vector2 = door.position + along * door.length * 0.5 + side * tile_px * 1.5
 		_add_rug(GANG_DOORMATS[rng.randi() % GANG_DOORMATS.size()], spot, door.rotation)
+
+
+## Rooms whose furniture list already has a big rug (they get no gang rug).
+func _rooms_with_own_rug() -> Dictionary:
+	var rooms := {}
+	for line in furniture.strip_edges().split("\n", false):
+		var parts := line.strip_edges().split(" ", false)
+		if parts.size() == 3 and parts[0] == "leopard_rug":
+			rooms[_room_of_tile.get(Vector2i(int(parts[1]), int(parts[2])), -1)] = true
+	return rooms
 
 
 ## True if every tile of the size x size block at `corner` is floor of `room`.
@@ -322,20 +344,28 @@ func _place_furniture() -> void:
 		if parts.size() == 3 and parts[0].begins_with("floor_") and FANCY_FLOORS.has(parts[0].trim_prefix("floor_")):
 			_room_floor[_room_of_tile.get(Vector2i(int(parts[1]), int(parts[2])), -1)] = parts[0].trim_prefix("floor_")
 			continue
-		if parts.size() != 3 or not FURNITURE.has(parts[0]):
+		if parts.size() != 3 or not (FURNITURE.has(parts[0]) or FANCY_FURNITURE.has(parts[0])):
 			push_warning("LevelMap: bad furniture line '%s'" % line)
 			continue
-		var region: Rect2 = FURNITURE[parts[0]][0]
-		var solid: bool = FURNITURE[parts[0]][1]
 		var piece := Sprite2D.new()
 		piece.name = parts[0].capitalize().replace(" ", "")
-		piece.texture = INTERIORS
-		piece.region_enabled = true
-		piece.region_rect = region
+		var region: Rect2
+		var solid: bool
+		if FANCY_FURNITURE.has(parts[0]):
+			piece.texture = load("res://assets/levels/furniture/%s.png" % parts[0])
+			region = Rect2(Vector2.ZERO, piece.texture.get_size())
+			solid = FANCY_FURNITURE[parts[0]]
+			piece.add_to_group("fancy_furniture")
+		else:
+			region = FURNITURE[parts[0]][0]
+			solid = FURNITURE[parts[0]][1]
+			piece.texture = INTERIORS
+			piece.region_enabled = true
+			piece.region_rect = region
 		piece.centered = false
 		piece.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 		piece.position = Vector2(int(parts[1]), int(parts[2])) * tile_px
-		if not solid:
+		if parts[0].ends_with("rug") or parts[0].begins_with("rug_"):
 			piece.z_index = -1   # rugs: on the floor, under the blood
 		add_child(piece)
 		if solid:
