@@ -79,6 +79,7 @@ const FANCY_FURNITURE := {
 	"chair": true, "bar_counter": true, "bar_stool": true, "gold_lamp": true,
 	"plant": true, "statue": true, "kitchen_counter": true, "kitchen_sink": true,
 	"stove": true, "fridge": true, "bathtub": true, "toilet": true,
+	"bed": true, "nightstand": true,
 }
 ## Floor tiles in the interiors sheet. Rooms take turns: wood, brick, wood...
 const WOOD_TILES := [Rect2(96, 48, 16, 16), Rect2(112, 48, 16, 16)]
