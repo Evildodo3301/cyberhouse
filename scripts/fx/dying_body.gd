@@ -48,7 +48,7 @@ func _ready() -> void:
 	for i in 12:
 		_pool_shape.append(randf_range(0.65, 1.0))
 	_spurt_angle = direction.angle() + PI + randf_range(-0.9, 0.9)   # out of the wound, back the way the hit came
-	_twitch_seed = randf() * 10.0
+	_twitch_seed = randf_range(0.2, 1.2)   # the first fit starts straight away
 	# A few short squiggles at the wound: the veins that pump.
 	for i in 3:
 		var vein := PackedVector2Array([Vector2.ZERO])

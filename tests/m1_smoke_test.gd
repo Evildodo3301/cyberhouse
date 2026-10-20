@@ -882,7 +882,8 @@ func _initialize() -> void:
 	var twitches := {}
 	var most_drops := 0
 	var pool_at_half := 0.0
-	for i in 60:
+	var watch_until := Time.get_ticks_msec() + 1200
+	while Time.get_ticks_msec() < watch_until:
 		await process_frame
 		twitches[snappedf(dying[0].leg_twitch(), 0.01)] = true
 		most_drops = maxi(most_drops, dying[0]._drops.size())
