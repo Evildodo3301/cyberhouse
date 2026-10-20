@@ -58,7 +58,7 @@ func _initialize() -> void:
 	check(pieces.size() >= 80, "lots of furniture (%d pieces)" % pieces.size())
 	var fancy_rooms := {}
 	for piece in root.get_tree().get_nodes_in_group("fancy_furniture"):
-		fancy_rooms[map.room_at(piece.position + piece.texture.get_size() * 0.5)] = true
+		fancy_rooms[map.room_at(piece.position + piece.offset + piece.texture.get_size() * 0.5)] = true
 	check(fancy_rooms.size() == map.room_count(), "fancy furniture in every room (%d of %d)" % [fancy_rooms.size(), map.room_count()])
 	var leopard = map.get_children().filter(func(c): return c is Sprite2D and c.name == "LeopardRug")
 	check(leopard.size() == 1 and leopard[0].z_index == -1, "the leopard rug lies under the blood")

@@ -4,6 +4,8 @@ extends Node2D
 
 ## Unique name for this room. The learning system keeps its memory per room.
 @export var room_id: StringName = &"m1_test_arena"
+## The level that comes after this one (empty = replay this one).
+@export_file("*.tscn") var next_level: String = ""
 
 @onready var player: Player = $Player
 @onready var touch_controls: TouchControls = $TouchControls
@@ -65,7 +67,9 @@ func _on_enemy_died(_enemy: Node2D) -> void:
 func _on_exit_reached() -> void:
 	var seconds := (Time.get_ticks_msec() - _started_ms) / 1000.0
 	var score: int = $ScoreBoard.score
-	death_screen.show_message("LEVEL COMPLETE\n%d:%04.1f   SCORE %d\nTAP TO PLAY AGAIN" % [int(seconds) / 60, fmod(seconds, 60.0), score], Color(0.1, 0.6, 0.3, 0.35))
+	var next := "TAP FOR THE NEXT LEVEL" if next_level != "" else "TAP TO PLAY AGAIN"
+	death_screen.next_scene = next_level
+	death_screen.show_message("LEVEL COMPLETE\n%d:%04.1f   SCORE %d\n%s" % [int(seconds) / 60, fmod(seconds, 60.0), score, next], Color(0.1, 0.6, 0.3, 0.35))
 
 
 func _add_weapon_label() -> void:

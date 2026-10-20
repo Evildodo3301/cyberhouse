@@ -7,6 +7,8 @@ extends CanvasLayer
 ## the screen doesn't restart by accident.
 @export var input_delay: float = 0.25
 
+## Set when a level is finished: the tap goes to this scene instead.
+var next_scene: String = ""
 var _shown_at_ms: int = -1
 var _tint: ColorRect
 var _label: Label
@@ -50,4 +52,7 @@ func _input(event: InputEvent) -> void:
 	var key: bool = event is InputEventKey and event.pressed and not event.echo
 	if tapped or key:
 		get_viewport().set_input_as_handled()
-		Game.restart_room()
+		if next_scene != "":
+			Game.load_level(next_scene)
+		else:
+			Game.restart_room()

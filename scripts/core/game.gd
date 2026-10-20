@@ -49,6 +49,13 @@ func restart_room() -> void:
 	get_tree().reload_current_scene()
 
 
+## Starts another level from scratch (after a level is finished).
+func load_level(path: String) -> void:
+	get_tree().paused = false
+	Engine.time_scale = 1.0
+	get_tree().change_scene_to_file(path)
+
+
 ## Freezes the game for a split second to make hits feel heavy.
 func hit_stop(duration: float) -> void:
 	if duration <= 0.0:

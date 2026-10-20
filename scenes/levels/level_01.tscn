@@ -13,6 +13,7 @@
 [node name="Level01" type="Node2D"]
 script = ExtResource("1_main")
 room_id = &"level_01"
+next_level = "res://scenes/levels/level_02.tscn"
 
 [node name="Gore" type="Node2D" parent="."]
 script = ExtResource("3_gore")

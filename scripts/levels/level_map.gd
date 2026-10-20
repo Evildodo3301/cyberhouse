@@ -7,7 +7,8 @@ extends Node2D
 ##   #  wall              .  floor
 ##   (space)  open sky: you can't go there, and the neon void shows through
 ##   D  swinging door     o  open doorway (no door)
-##      (a straight run of D's or o's in a wall = one doorway)
+##      (a straight run of D's or o's in a wall = one doorway; 8 or more
+##      D's, an even number, make a double door)
 ##   P  player start      g  pistol on the floor
 ##   m  machete on the floor
 ##   C  cop grunt with a pistol: shoots you, drops the pistol
@@ -18,16 +19,30 @@ extends Node2D
 ##      player is the only one in pink; shoots, drops the pistol)
 ##   K  doberman: patrols, bites, carries nothing
 ##   E  exit (opens once every enemy is dead)
+##   W  window wall: floor-to-ceiling glass with the city behind it.
+##      Blocks like a wall.
 ##
 ## Rooms are worked out automatically: floor areas separated by walls and
-## doorways. Enemies notice you the moment you step into their room.
+## doorways. How enemies notice you is set per level (EnemySettings).
 ##
 ## Furniture goes in a second list, one item per line: "sofa 17 1" puts a
 ## sofa with its top-left corner on tile (17, 1). "floor_brick 5 5" gives
 ## the room around tile (5, 5) a brick floor; "floor_marble",
-## "floor_dark_marble" and "floor_bath" give it a fancy floor; other
-## rooms get wood. Solid pieces block you,
+## "floor_dark_marble", "floor_bath", "floor_checker" (black and white
+## kitchen tiles) and "floor_herringbone" (dark wood parquet) give it a fancy
+## floor; other rooms get wood. Solid pieces block you,
 ## enemies and bullets (enemies path round them); rugs are floor decoration.
+## Tall pieces (plants, lamps, statues) only block at their base (FOOTPRINTS),
+## so you can brush past their leaves or shade; everything standing on the floor is
+## drawn in order of how far down the screen its base is ("Y-sorting"), so
+## whoever is lower down is drawn in front.
+##
+## Wall decor goes in the same list with a fourth word, the wall it hangs on:
+## "painting_gold 40 0 up" hangs a painting on the north wall, starting at
+## wall tile (40, 0). up / down / left / right = north / south / west / east
+## wall. Decor is drawn on top of the wall, so it is never under anyone, and
+## it isn't solid. Art: res://assets/levels/decor/<name>.png, drawn as if on
+## a north wall (its bottom edge faces the room); it is turned for the others.
 ## Art: Pixel 16 Interiors (free version) by zedpxl, see CREDITS.md.
 
 const MACHETE := preload("res://data/weapons/machete.tres")
@@ -82,6 +97,17 @@ const FANCY_FURNITURE := {
 	"stove": true, "fridge": true, "bathtub": true, "toilet": true,
 	"bed": true, "nightstand": true,
 }
+## Pieces wider at the top than at the floor only block at their base: the
+## blocking rectangle in the piece's own pixels (x, y, width, height). Anything not listed blocks with
+## its whole picture.
+const FOOTPRINTS := {
+	"plant": Rect2(3, 3, 6, 6),       # the pot, under the leaves
+	"statue": Rect2(2, 2, 7, 7),      # the plinth
+	"gold_lamp": Rect2(2, 2, 5, 5),   # the stand, under the shade
+}
+## Wall decor (res://assets/levels/decor/<name>.png). Never solid.
+const WALL_DECOR := ["painting_gold", "painting_portrait", "sconce", "wall_clock", "wood_panel"]
+const DECOR_TURN := {"up": 0.0, "down": PI, "left": -PI / 2.0, "right": PI / 2.0}
 ## Floor tiles in the interiors sheet. Rooms take turns: wood, brick, wood...
 const WOOD_TILES := [Rect2(96, 48, 16, 16), Rect2(112, 48, 16, 16)]
 const BRICK_TILES := [Rect2(48, 32, 16, 16), Rect2(48, 48, 16, 16)]
@@ -92,7 +118,13 @@ const FANCY_FLOORS := {
 	"marble": [Rect2(0, 0, 16, 16), Rect2(16, 0, 16, 16)],
 	"dark_marble": [Rect2(32, 0, 16, 16), Rect2(48, 0, 16, 16)],
 	"bath": [Rect2(64, 0, 16, 16), Rect2(80, 0, 16, 16)],
+	"checker": [Rect2(0, 0, 16, 16), Rect2(16, 0, 16, 16)],
+	"herringbone": [Rect2(32, 0, 16, 16), Rect2(48, 0, 16, 16)],
 }
+## Penthouse floors live in their own sheet; the rest are in FLOORS_V2.
+const FLOORS_PENTHOUSE := preload("res://assets/levels/floors_penthouse.png")
+const PENTHOUSE_FLOORS := ["checker", "herringbone"]
+const GLASS := Color(0.32, 0.55, 0.7)
 const GOLD := Color(0.78, 0.6, 0.25)
 enum WallStyle { NEON, PLASTER }
 
@@ -139,12 +171,23 @@ var _walls: Array[Rect2] = []
 var _floor_tiles: Array[Vector2i] = []
 var _brick_rooms: Dictionary = {}   # room index -> true
 var _solid_rects: Array[Rect2] = []   # solid furniture, for patrol routes
-var _room_floor: Dictionary = {}    # room index -> "marble", "dark_marble" or "bath"
+var _room_floor: Dictionary = {}    # room index -> a FANCY_FLOORS name
+var _window_tiles: Array[Vector2i] = []   # W tiles: walls drawn as glass
 
 
 func _ready() -> void:
 	add_to_group("level")   # enemies ask it which room a point is in
 	_rows = layout.strip_edges().split("\n")
+	# Windows behave exactly like walls; only their look differs.
+	for y in _rows.size():
+		for x in _rows[y].length():
+			if _rows[y][x] == "W":
+				_window_tiles.append(Vector2i(x, y))
+		_rows[y] = _rows[y].replace("W", "#")
+	# Furniture, enemies and the player (our sibling) are drawn lowest-base-last.
+	y_sort_enabled = true
+	if get_parent() is Node2D:
+		get_parent().y_sort_enabled = true
 	var width := 0
 	for row in _rows:
 		width = maxi(width, row.length())
@@ -356,6 +399,9 @@ func _place_furniture() -> void:
 		if parts.size() == 3 and parts[0].begins_with("floor_") and FANCY_FLOORS.has(parts[0].trim_prefix("floor_")):
 			_room_floor[_room_of_tile.get(Vector2i(int(parts[1]), int(parts[2])), -1)] = parts[0].trim_prefix("floor_")
 			continue
+		if parts.size() == 4 and parts[0] in WALL_DECOR and DECOR_TURN.has(parts[3]):
+			_hang_decor(parts[0], Vector2i(int(parts[1]), int(parts[2])), parts[3])
+			continue
 		if parts.size() != 3 or not (FURNITURE.has(parts[0]) or FANCY_FURNITURE.has(parts[0])):
 			push_warning("LevelMap: bad furniture line '%s'" % line)
 			continue
@@ -376,23 +422,48 @@ func _place_furniture() -> void:
 			piece.region_rect = region
 		piece.centered = false
 		piece.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-		piece.position = Vector2(int(parts[1]), int(parts[2])) * tile_px
+		var corner := Vector2(int(parts[1]), int(parts[2])) * tile_px
+		# The node sits at the piece's base, so Y-sorting goes by where it
+		# stands; the picture is shifted back up to its corner.
+		piece.position = corner + Vector2(0, region.size.y)
+		piece.offset = Vector2(0, -region.size.y)
 		if parts[0].ends_with("rug") or parts[0].begins_with("rug_"):
 			piece.z_index = -1   # rugs: on the floor, under the blood
 		add_child(piece)
 		if solid:
-			_solid_rects.append(Rect2(piece.position, region.size))
+			var foot: Rect2 = FOOTPRINTS.get(parts[0], Rect2(Vector2(1, 1), region.size - Vector2(2, 2)))
+			foot.position += corner
+			_solid_rects.append(foot)
 			var body := StaticBody2D.new()
 			body.collision_layer = 1
 			body.collision_mask = 0
 			body.add_to_group("nav_walls")
-			body.position = piece.position + region.size * 0.5
+			body.position = foot.get_center()
 			var shape := CollisionShape2D.new()
 			var rectangle := RectangleShape2D.new()
-			rectangle.size = region.size - Vector2(2, 2)
+			rectangle.size = foot.size
 			shape.shape = rectangle
 			body.add_child(shape)
 			add_child(body)
+
+
+## A painting, sconce or similar on a wall: turned to face the room, drawn
+## over the wall (z 2) so nothing walks under it.
+func _hang_decor(decor_name: String, at: Vector2i, side: String) -> void:
+	var piece := Sprite2D.new()
+	piece.name = decor_name.capitalize().replace(" ", "")
+	piece.texture = load("res://assets/levels/decor/%s.png" % decor_name)
+	piece.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	piece.rotation = DECOR_TURN[side]
+	var size := piece.texture.get_size()
+	if side in ["left", "right"]:
+		size = Vector2(size.y, size.x)
+	piece.position = Vector2(at) * tile_px + size * 0.5
+	piece.z_index = 2
+	piece.add_to_group("wall_decor")
+	if tile(at) != "#":
+		push_warning("LevelMap: %s at %s is not on a wall" % [decor_name, at])
+	add_child(piece)
 
 
 ## A straight run of D's becomes one swinging door hinged at its first tile.
@@ -409,17 +480,19 @@ func _build_doorways() -> void:
 			while tile(at + step * length) == "D":
 				seen[at + step * length] = true
 				length += 1
-			count += 1
-			var door: Node2D = DOOR_SCENE.instantiate()
-			door.name = "Door%d" % count
-			door.door_id = door.name
-			door.length = length * tile_px
-			if step == Vector2i.RIGHT:
-				door.position = Vector2(at.x * tile_px, at.y * tile_px + tile_px * 0.5)
-			else:
-				door.position = Vector2(at.x * tile_px + tile_px * 0.5, at.y * tile_px)
-				door.rotation = PI * 0.5
-			add_child(door)
+			# 8 or more D's in a row (an even number) make a double door: two
+			# halves hinged at the two ends, meeting in the middle.
+			var halves := 2 if length >= 8 and length % 2 == 0 else 1
+			var start := Vector2(at) * tile_px + Vector2(step.y, step.x) * tile_px * 0.5
+			for half in halves:
+				count += 1
+				var door: Node2D = DOOR_SCENE.instantiate()
+				door.name = "Door%d" % count
+				door.door_id = door.name
+				door.length = length * tile_px / halves
+				door.position = start + Vector2(step) * (length * tile_px * half)
+				door.rotation = (0.0 if step == Vector2i.RIGHT else PI * 0.5) + PI * half
+				add_child(door)
 
 
 func _spawn_things() -> void:
@@ -575,12 +648,20 @@ func _draw_floor(canvas: Node2D) -> void:
 	var per := maxi(16 / tile_px, 1)   # map tiles per art square, each way
 	for at in _floor_tiles:
 		var rect := Rect2(Vector2(at) * tile_px, Vector2.ONE * tile_px)
-		var room: int = _room_of_tile.get(at, -1)   # doorways get the wood floor
+		var room: int = _room_of_tile.get(at, -1)
+		if room == -1:   # a doorway: carry on the floor of a room it opens into
+			for dir in [Vector2i.DOWN, Vector2i.RIGHT, Vector2i.UP, Vector2i.LEFT]:
+				var next: Vector2i = at + dir
+				while tile(next) in ["D", "o"]:
+					next += dir
+				if _room_floor.has(_room_of_tile.get(next, -1)):
+					room = _room_of_tile[next]
+					break
 		var sheet: Texture2D = INTERIORS
 		var tint := floor_tint
 		var tiles: Array = BRICK_TILES if _brick_rooms.has(room) else WOOD_TILES
 		if _room_floor.has(room):
-			sheet = FLOORS_V2
+			sheet = FLOORS_PENTHOUSE if _room_floor[room] in PENTHOUSE_FLOORS else FLOORS_V2
 			tint = fancy_floor_tint
 			tiles = FANCY_FLOORS[_room_floor[room]]
 		var square := Vector2i(at.x / per, at.y / per)
@@ -605,11 +686,30 @@ func _draw_floor(canvas: Node2D) -> void:
 func _draw_walls(canvas: Node2D) -> void:
 	if wall_style == WallStyle.PLASTER:
 		_draw_plaster_walls(canvas)
-		return
-	for rect in _walls:
-		canvas.draw_rect(rect, wall_color.darkened(0.7), true)
-	for rect in _walls:
-		canvas.draw_rect(rect, Color(wall_color, 0.8), false, 1.0)
+	else:
+		for rect in _walls:
+			canvas.draw_rect(rect, wall_color.darkened(0.7), true)
+		for rect in _walls:
+			canvas.draw_rect(rect, Color(wall_color, 0.8), false, 1.0)
+	_draw_windows(canvas)
+
+
+## Window walls: dark glass with a thin frame, a diagonal glint and the odd
+## lit city window showing through.
+func _draw_windows(canvas: Node2D) -> void:
+	for at in _window_tiles:
+		var rect := Rect2(Vector2(at) * tile_px, Vector2.ONE * tile_px)
+		canvas.draw_rect(rect, GLASS.darkened(0.55), true)
+		if (at.x * 5 + at.y * 3) % 4 == 0:
+			canvas.draw_rect(Rect2(rect.position + Vector2(2, 2), Vector2(2, 2)), Color(1.0, 0.85, 0.45, 0.8), true)
+		if (at.x + at.y) % 6 == 0:
+			canvas.draw_line(rect.position + Vector2(1, rect.size.y - 1), rect.position + Vector2(rect.size.x - 1, 1), Color(1, 1, 1, 0.35), 1.0)
+		for dir in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+			if _window_tiles.has(at + dir):
+				continue
+			var along := Vector2(absi(dir.y), absi(dir.x)) * tile_px
+			var edge := rect.position + (Vector2(dir) * 0.5 + Vector2(0.5, 0.5)) * tile_px - Vector2(dir) * 0.5 - along * 0.5
+			canvas.draw_line(edge, edge + along, Color(0.12, 0.1, 0.1), 1.0)
 
 
 ## The fancy house walls: plaster with a light cap line on each side showing
