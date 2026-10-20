@@ -22,5 +22,6 @@
 ## Everything else
 
 Code, crosshair (from the Creative Director's design), weapon art
-(`assets/weapons/`), gang rugs and doormats (`assets/levels/rugs/`) and
+(`assets/weapons/`), attack arm frames (`assets/attacks/`), fancy house floors
+(`assets/levels/floors_v2.png`), gang rugs and doormats (`assets/levels/rugs/`) and
 placeholder shapes are original to Cyberhouse.

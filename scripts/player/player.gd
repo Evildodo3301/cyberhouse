@@ -113,6 +113,9 @@ var _pose_time: float = -1.0   # seconds since the last strike or shot (-1 = at 
 var _fire_anim: float = -1.0   # seconds into the weapon's fire / swing frames (-1 = none)
 var _crosshair: Sprite2D
 var _sprite: Sprite2D        # arms, body and head, on the torso (turns with the aim)
+var _arms: Sprite2D          # the weapon's arms + weapon frames, on top of the torso sprite
+var _shine := BladeShine.new()   # glint along a blade in hand
+var _glint: Node2D           # draws it, above the body
 var _legs_sprite: Sprite2D   # the feet, on the legs (turn with the walk)
 var _idle_time: float = 0.0
 var _muzzle_light: Sprite2D   # the circle of light a shot casts around you
@@ -148,9 +151,17 @@ func _ready() -> void:
 		_legs.add_child(_legs_sprite)
 		_sprite = _make_sprite(torso_sheet)
 		_sprite.show_behind_parent = true   # the gun in hand is drawn on top
+		_arms = Sprite2D.new()
+		_arms.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		_arms.visible = false
+		_sprite.add_child(_arms)
 		_torso.add_child(_sprite)
 	_muzzle_light = _make_light()
 	add_child(_muzzle_light)
+	_glint = Node2D.new()
+	_glint.z_index = 0   # drawn after the body; walls (z 1) still cover it
+	_glint.draw.connect(_draw_glint)
+	add_child(_glint)
 	_crosshair = Sprite2D.new()
 	_crosshair.texture = CROSSHAIR_TEXTURE
 	_crosshair.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
@@ -259,6 +270,8 @@ func _update_attack_pose(delta: float) -> void:
 			shift = LUNGE * back
 	if _pose_time >= SWING_TIME + SETTLE_TIME:
 		_pose_time = -1.0
+	if weapon.attack_overlay:
+		twist = 0.0   # the arm frames do the swinging
 	_torso.rotation += twist
 	_torso.position = facing * shift
 
@@ -284,11 +297,55 @@ func _update_body(delta: float) -> void:
 		var walking := speed > settings.legs_idle_speed
 		var step := int(_stride / stride_per_frame)
 		var idle_step := int(_idle_time * 2.0)   # slow breathing, 2 frames a second
-		if has_gun():
+		if has_gun() and not weapon.attack_overlay:
 			_sprite.frame = PISTOL_WALK_FRAMES[step % 10] if walking else PISTOL_IDLE_FRAMES[idle_step % 2]
 		else:
 			_sprite.frame = WALK_FRAMES[step % 10] if walking else IDLE_FRAMES[idle_step % 2]
 		_legs_sprite.frame = WALK_FRAMES[step % 10] if walking else IDLE_FRAMES[0]
+		_update_arms()
+
+
+## The weapon's arm frames on top of the torso. A weapon in hand always shows
+## (frame 0); bare fists only while punching. Melee: wind-up, hit,
+## follow-through. Gun: the shot, then the recoil.
+func _update_arms() -> void:
+	var art := weapon.attack_overlay
+	var frame := -1
+	if art == null:
+		pass
+	elif has_gun():
+		frame = 0
+		if _pose_time >= 0.0 and _pose_time < RECOIL_TIME * 2.0:
+			frame = 1 if _pose_time < RECOIL_TIME * 0.6 else weapon.attack_frames - 1
+	else:
+		if _attack_state == AttackState.WINDUP or _finishing and _swing_flash <= 0.0:
+			frame = 1
+		elif _pose_time >= 0.0 and _pose_time < SWING_TIME + SETTLE_TIME:
+			frame = 2 if _pose_time < SWING_TIME * 0.6 else weapon.attack_frames - 1
+		elif _finishing:
+			frame = 2
+		elif weapon != settings.start_weapon:
+			frame = 0
+	_arms.visible = frame >= 0
+	if frame >= 0:
+		_arms.texture = art
+		_arms.hframes = weapon.attack_frames
+		_arms.frame = frame
+	if weapon.blade_shine:
+		var moving := velocity.length() > settings.legs_idle_speed or _pose_time >= 0.0 or _attack_state == AttackState.WINDUP or _finishing
+		_shine.update(get_physics_process_delta_time(), moving)
+	_glint.queue_redraw()
+
+
+## The blade glint, running along the blade in the current arm frame.
+func _draw_glint() -> void:
+	if not _alive or not weapon.blade_shine or _arms == null or not _arms.visible:
+		return
+	var line := BladeShine.blade_line(_arms.texture, weapon.attack_frames, _arms.frame)
+	if line.is_empty():
+		return
+	var to_me := get_global_transform().affine_inverse() * _arms.get_global_transform()
+	_shine.draw(_glint, to_me * line[0], to_me * line[1], 2.5)
 
 
 ## Aim assist: if a target sits close to the aim line, return the direction
@@ -793,7 +850,9 @@ func _draw_torso() -> void:
 	if not _alive:
 		return
 	if _sprite:
-		if weapon.floor_texture and weapon != settings.start_weapon:
+		if weapon.attack_overlay:
+			pass   # the arm frames show the weapon in hand
+		elif weapon.floor_texture and weapon != settings.start_weapon:
 			# Gun held out in both hands; a blade in the right hand.
 			var size := weapon.held_size()
 			var at := Vector2(4, -size.y / 2.0) if has_gun() else Vector2(1, 4 - size.y / 2.0)

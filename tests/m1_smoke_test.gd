@@ -759,14 +759,18 @@ func _initialize() -> void:
 	await wait_frames(2)
 	var torso: Node2D = player.get_node("Torso")
 	player.equip(load("res://data/weapons/machete.tres"), -1)
-	var widest_twist := 0.0
 	var furthest := 0.0
+	var arm_frames := {}
+	var arms: Sprite2D = player._arms
+	await wait_frames(1)
+	check(arms.visible and arms.frame == 0, "a machete in hand shows the arms holding it")
 	player.request_attack(Vector2.RIGHT)
 	for i in 20:
 		await physics_frame
-		widest_twist = maxf(widest_twist, absf(angle_difference(torso.rotation, player.facing.angle())))
 		furthest = maxf(furthest, torso.position.dot(player.facing))
-	check(widest_twist > 0.4 and furthest > 2.0, "a swing twists the torso and lunges (%.2f rad, %.1f px)" % [widest_twist, furthest])
+		arm_frames[arms.frame] = true
+	check(arm_frames.size() == 4, "a swing plays all 4 arm frames (%s)" % [arm_frames.keys()])
+	check(furthest > 2.0, "a swing lunges forward (%.1f px)" % furthest)
 	await wait_frames(10)
 	check(torso.position.length() < 0.01 and absf(angle_difference(torso.rotation, player.facing.angle())) < 0.01, "then it settles back to the aim")
 	player.equip(load("res://data/weapons/pistol.tres"), 8)
@@ -776,8 +780,47 @@ func _initialize() -> void:
 		await physics_frame
 		kicked = minf(kicked, torso.position.dot(player.facing))
 	check(kicked < -1.0, "a shot kicks you back (%.1f px)" % kicked)
+	player.equip(load("res://data/weapons/fists.tres"), -1)
+	await wait_frames(20)
+	check(not arms.visible, "bare fists show no arm frames at rest")
+	player.request_attack(Vector2.RIGHT)
+	await wait_frames(2)
+	check(arms.visible, "a punch shows the punching arms")
+	var thug = load("res://scenes/enemies/grunt.tscn").instantiate()
+	thug.carried_weapon = load("res://data/weapons/machete.tres")
+	thug.position = Vector2(400, 60)
+	main.add_child(thug)
+	await wait_frames(3)
+	check(thug._arms.visible and thug._arms.texture.resource_path.ends_with("enemy_machete_swing_4f.png"), "a machete enemy holds its machete in the enemy arm frames")
 	var big_gun: WeaponData = load("res://data/weapons/machine_gun.tres")
 	check(big_gun.held_size().x <= 10.0, "the biggest held gun is shorter than you are wide (%.0f px)" % big_gun.held_size().x)
+
+	# 36. The machete's blade glints: now and then at rest, often while it moves.
+	var machete_data: WeaponData = load("res://data/weapons/machete.tres")
+	check(machete_data.blade_shine and not load("res://data/weapons/pistol.tres").blade_shine, "the machete has blade shine, guns don't")
+	var lines := [BladeShine.blade_line(machete_data.floor_texture, 1, 0)]
+	for f in machete_data.attack_frames:
+		lines.append(BladeShine.blade_line(machete_data.attack_overlay, machete_data.attack_frames, f))
+		lines.append(BladeShine.blade_line(machete_data.enemy_attack_overlay, machete_data.attack_frames, f))
+	check(lines.all(func(l): return l.size() == 2 and l[0].distance_to(l[1]) >= 4.0), "the blade is found on the floor sprite and in every arm frame %s" % [lines.map(func(l): return snappedf(l[0].distance_to(l[1]), 0.1) if l.size() == 2 else -1)])
+	var resting := BladeShine.new()
+	var rest_glints := 0
+	var was_on := false
+	for i in 300:   # 5 s
+		resting.update(1.0 / 60.0, false)
+		if resting.active() and not was_on:
+			rest_glints += 1
+		was_on = resting.active()
+	var moving := BladeShine.new()
+	var move_glints := 0
+	was_on = false
+	for i in 300:
+		moving.update(1.0 / 60.0, true)
+		if moving.active() and not was_on:
+			move_glints += 1
+		was_on = moving.active()
+	check(rest_glints >= 2 and rest_glints <= 3, "at rest it glints every couple of seconds (%d in 5 s)" % rest_glints)
+	check(move_glints >= 10, "while it moves it keeps glinting (%d in 5 s)" % move_glints)
 
 	print("\n%s (%d failure(s))" % ["ALL PASSED" if failures == 0 else "SOME FAILED", failures])
 	quit(failures)

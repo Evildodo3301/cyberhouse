@@ -116,8 +116,11 @@ const PUNCH_FRAME := 3          # walk frame with one arm thrown forward
 const KNOCKED_FRAME := SHEET_COLUMNS   # first corpse pose, no blood
 const CLEAN_CORPSES := [0, 2, 4, 6, 8, 9, 10, 11]
 const OUTLINE := preload("res://shaders/outline.gdshader")
+const FISTS := preload("res://data/weapons/fists.tres")
 
 var _sprite: Sprite2D
+var _arms: Sprite2D    # the weapon's arms + weapon frames, on the body sprite
+var _shine := BladeShine.new()   # glint along a blade in hand
 var _overlay: Node2D   # eyes, "!", barks and telegraphs, drawn above the sprite
 var _walked: float = 0.0
 
@@ -156,6 +159,10 @@ func _ready() -> void:
 		material.shader = OUTLINE
 		_sprite.material = material
 		add_child(_sprite)
+		_arms = Sprite2D.new()
+		_arms.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		_arms.visible = false
+		_sprite.add_child(_arms)
 	add_child(_overlay)
 
 
@@ -726,21 +733,49 @@ func _update_sprite(delta: float) -> void:
 		return
 	if state == State.KNOCKED_DOWN:
 		_sprite.frame = KNOCKED_FRAME
+		_arms.visible = false
 		return
 	_sprite.rotation = facing.angle() + PI * 0.5
 	_sprite.position = facing * _attack_shift()
-	if state == State.ATTACK:
-		# Code-driven swing until the attack frames arrive: twist back in the
-		# wind-up, whip through at the hit.
+	var arms_frame := _arms_frame()
+	if state == State.ATTACK and arms_frame < 0:
+		# No arm frames: twist back in the wind-up, whip through at the hit.
 		var t := _state_time / maxf(settings.attack_windup, 0.01)
 		_sprite.rotation += -0.5 * minf(t, 1.0) if not _struck else lerpf(-0.5, 0.5, minf((t - 1.0) * 6.0, 1.0))
-	if state == State.ATTACK and not _struck:
+	_arms.visible = arms_frame >= 0
+	if arms_frame >= 0:
+		var held: WeaponData = carried_weapon if carried_weapon else FISTS
+		_arms.texture = held.enemy_attack_overlay
+		_arms.hframes = held.attack_frames
+		_arms.frame = arms_frame
+		if held.blade_shine:
+			_shine.update(delta, velocity.length() > 10.0 or state == State.ATTACK)
+	if state == State.ATTACK and not _struck and arms_frame < 0:
 		_sprite.frame = PUNCH_FRAME
 	elif velocity.length() > 5.0:
 		_walked += velocity.length() * delta
 		_sprite.frame = int(_walked / stride_per_frame) % SHEET_COLUMNS
 	else:
 		_sprite.frame = 0
+
+
+## Which arm frame to show (-1 = none): a weapon in hand always (frame 0),
+## bare fists only while punching. Melee: wind-up, hit, follow-through.
+## Gun: the shot, then the recoil.
+func _arms_frame() -> int:
+	var held: WeaponData = carried_weapon if carried_weapon else FISTS
+	if held.enemy_attack_overlay == null:
+		return -1
+	var last := held.attack_frames - 1
+	if has_gun():
+		if _muzzle_time > 0.0:
+			return 1 if _muzzle_time > _muzzle_length() * 0.5 else last
+		return 0
+	if state == State.ATTACK:
+		if not _struck:
+			return 1
+		return 2 if _state_time - settings.attack_windup < 0.06 else last
+	return 0 if carried_weapon else -1
 
 
 ## How far the body leans along `facing`: back in the wind-up, a lunge at
@@ -807,10 +842,17 @@ func _draw_overlay() -> void:
 	var o := _overlay
 	if state == State.KNOCKED_DOWN:
 		return
+	if _arms and _arms.visible and carried_weapon and carried_weapon.blade_shine:
+		var line := BladeShine.blade_line(_arms.texture, carried_weapon.attack_frames, _arms.frame)
+		if not line.is_empty():
+			var to_me := get_global_transform().affine_inverse() * _arms.get_global_transform()
+			_shine.draw(o, to_me * line[0], to_me * line[1], 2.5)
 	if carried_weapon:
 		# The gun it will drop, held at its side.
 		var hand := facing.orthogonal() * 5.0 + facing * 6.0
-		if carried_weapon.floor_texture:
+		if carried_weapon.enemy_attack_overlay and _sprite:
+			pass   # the arm frames show the weapon in hand
+		elif carried_weapon.floor_texture:
 			var size := carried_weapon.held_size()
 			o.draw_set_transform(hand + facing * _attack_shift(), facing.angle())
 			o.draw_texture_rect(carried_weapon.floor_texture, Rect2(Vector2(0, -size.y / 2.0), size), false)

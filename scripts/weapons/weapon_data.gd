@@ -63,6 +63,16 @@ enum Kind { MELEE, GUN }
 @export var fire_frames: int = 4
 ## Frames per second of the fire / swing animation.
 @export var fire_fps: float = 60.0
+## Arms + weapon drawn on top of the torso, 64 px cells side by side, facing
+## up like the body sheets. Frame 0 = holding it; the rest play on an attack
+## (melee: wind-up, hit, follow-through; gun: the shot, the recoil).
+@export var attack_overlay: Texture2D
+## The same for enemies (black-suit sleeves).
+@export var enemy_attack_overlay: Texture2D
+@export var attack_frames: int = 4
+## A star glint runs along the blade now and then, and often while it moves
+## (BladeShine). For the machete; a dagger would get it too.
+@export var blade_shine: bool = false
 
 
 ## Size to draw the floor sprite at when it's held: never longer than

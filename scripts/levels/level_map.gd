@@ -71,6 +71,16 @@ const GANG_DOORMATS := [
 ## Floor tiles in the interiors sheet. Rooms take turns: wood, brick, wood...
 const WOOD_TILES := [Rect2(96, 48, 16, 16), Rect2(112, 48, 16, 16)]
 const BRICK_TILES := [Rect2(48, 32, 16, 16), Rect2(48, 48, 16, 16)]
+## Fancy house floors (our own tiles): white marble for lounges and halls,
+## black marble with gold veins for the kitchen, small white tiles for baths.
+const FLOORS_V2 := preload("res://assets/levels/floors_v2.png")
+const FANCY_FLOORS := {
+	"marble": [Rect2(0, 0, 16, 16), Rect2(16, 0, 16, 16)],
+	"dark_marble": [Rect2(32, 0, 16, 16), Rect2(48, 0, 16, 16)],
+	"bath": [Rect2(64, 0, 16, 16), Rect2(80, 0, 16, 16)],
+}
+const GOLD := Color(0.78, 0.6, 0.25)
+enum WallStyle { NEON, PLASTER }
 
 @export_multiline var layout: String = ""
 ## Size of one letter in pixels. Doors are as long as their run of D's.
@@ -80,6 +90,14 @@ const BRICK_TILES := [Rect2(48, 32, 16, 16), Rect2(48, 48, 16, 16)]
 ## Darkens the floor tiles so the neon walls, blood and characters stand out.
 @export var floor_tint: Color = Color(0.62, 0.55, 0.62)
 @export var wall_color: Color = Color(0.55, 0.2, 1.0)    # neon purple
+## NEON: glowing outlines. PLASTER: the fancy house look, plaster walls with
+## a light cap line and red-brick pillars at corners and door frames.
+@export var wall_style: WallStyle = WallStyle.NEON
+@export var plaster_color: Color = Color(0.13, 0.24, 0.21)   # deep green
+@export var cap_color: Color = Color(0.86, 0.82, 0.7)        # cream
+@export var brick_color: Color = Color(0.6, 0.25, 0.17)
+## Tint for the fancy floors (lighter than floor_tint: marble is meant to shine).
+@export var fancy_floor_tint: Color = Color(0.8, 0.78, 0.8)
 ## Share of enemies (0 to 1) that will chase you out of their room. The rest
 ## stop at their own doorway. Early levels keep this low. Which enemies roam
 ## is fixed by map order, so it is the same on every retry.
@@ -97,6 +115,7 @@ var _room_of_tile: Dictionary = {}   # Vector2i -> room index
 var _walls: Array[Rect2] = []
 var _floor_tiles: Array[Vector2i] = []
 var _brick_rooms: Dictionary = {}   # room index -> true
+var _room_floor: Dictionary = {}    # room index -> "marble", "dark_marble" or "bath"
 
 
 func _ready() -> void:
@@ -300,6 +319,9 @@ func _place_furniture() -> void:
 		if parts.size() == 3 and parts[0] == "floor_brick":
 			_brick_rooms[_room_of_tile.get(Vector2i(int(parts[1]), int(parts[2])), -1)] = true
 			continue
+		if parts.size() == 3 and parts[0].begins_with("floor_") and FANCY_FLOORS.has(parts[0].trim_prefix("floor_")):
+			_room_floor[_room_of_tile.get(Vector2i(int(parts[1]), int(parts[2])), -1)] = parts[0].trim_prefix("floor_")
+			continue
 		if parts.size() != 3 or not FURNITURE.has(parts[0]):
 			push_warning("LevelMap: bad furniture line '%s'" % line)
 			continue
@@ -461,15 +483,84 @@ func _draw_floor(canvas: Node2D) -> void:
 	for at in _floor_tiles:
 		var rect := Rect2(Vector2(at) * tile_px, Vector2.ONE * tile_px)
 		var room: int = _room_of_tile.get(at, -1)   # doorways get the wood floor
+		var sheet: Texture2D = INTERIORS
+		var tint := floor_tint
 		var tiles: Array = BRICK_TILES if _brick_rooms.has(room) else WOOD_TILES
+		if _room_floor.has(room):
+			sheet = FLOORS_V2
+			tint = fancy_floor_tint
+			tiles = FANCY_FLOORS[_room_floor[room]]
 		var square := Vector2i(at.x / per, at.y / per)
 		var pick: Rect2 = tiles[(square.x * 7 + square.y * 13) % tiles.size()]
 		var part := Vector2(at.x % per, at.y % per) * tile_px
-		canvas.draw_texture_rect_region(INTERIORS, rect, Rect2(pick.position + part, Vector2.ONE * mini(tile_px, 16)), floor_tint)
+		canvas.draw_texture_rect_region(sheet, rect, Rect2(pick.position + part, Vector2.ONE * mini(tile_px, 16)), tint)
+	# Marble rooms get a thin gold border a little in from the walls.
+	var inset := tile_px * 0.6
+	for at in _floor_tiles:
+		var room: int = _room_of_tile.get(at, -1)
+		if not _room_floor.get(room, "") in ["marble", "dark_marble"]:
+			continue
+		var corner := Vector2(at) * tile_px
+		for dir in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+			if tile(at + dir) != "#":
+				continue
+			var along := Vector2(absi(dir.y), absi(dir.x)) * tile_px   # the edge's length, sideways to dir
+			var edge := corner + (Vector2(dir) * 0.5 + Vector2(0.5, 0.5)) * tile_px - Vector2(dir) * inset - along * 0.5
+			canvas.draw_line(edge, edge + along, Color(GOLD, 0.7), 1.0)
 
 
 func _draw_walls(canvas: Node2D) -> void:
+	if wall_style == WallStyle.PLASTER:
+		_draw_plaster_walls(canvas)
+		return
 	for rect in _walls:
 		canvas.draw_rect(rect, wall_color.darkened(0.7), true)
 	for rect in _walls:
 		canvas.draw_rect(rect, Color(wall_color, 0.8), false, 1.0)
+
+
+## The fancy house walls: plaster with a light cap line on each side showing
+## the wall's thickness, and red-brick pillars where walls meet or turn and
+## on both sides of every doorway.
+func _draw_plaster_walls(canvas: Node2D) -> void:
+	for rect in _walls:
+		canvas.draw_rect(rect, plaster_color, true)
+	# Cap lines: along every wall edge that faces an open tile.
+	for y in _rows.size():
+		for x in _rows[y].length():
+			var at := Vector2i(x, y)
+			if tile(at) != "#":
+				continue
+			var corner := Vector2(at) * tile_px
+			for dir in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+				if tile(at + dir) in ["#", " ", ""]:
+					continue
+				var along := Vector2(absi(dir.y), absi(dir.x)) * tile_px
+				var edge := corner + (Vector2(dir) * 0.5 + Vector2(0.5, 0.5)) * tile_px - Vector2(dir) * 0.5 - along * 0.5
+				canvas.draw_line(edge, edge + along, cap_color, 1.0)
+	# Pillars.
+	for y in _rows.size():
+		for x in _rows[y].length():
+			var at := Vector2i(x, y)
+			if tile(at) != "#":
+				continue
+			var walls_x := int(tile(at + Vector2i.LEFT) == "#") + int(tile(at + Vector2i.RIGHT) == "#")
+			var walls_y := int(tile(at + Vector2i.UP) == "#") + int(tile(at + Vector2i.DOWN) == "#")
+			var by_door := false
+			for dir in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+				if tile(at + dir) in ["D", "o"]:
+					by_door = true
+			if (walls_x > 0 and walls_y > 0) or by_door:
+				_draw_pillar(canvas, Rect2(Vector2(at) * tile_px, Vector2.ONE * tile_px))
+
+
+func _draw_pillar(canvas: Node2D, rect: Rect2) -> void:
+	var r := rect.grow(0.5)
+	canvas.draw_rect(r, brick_color, true)
+	var mortar := brick_color.darkened(0.45)
+	var h := r.size.y / 3.0
+	for i in range(1, 3):
+		canvas.draw_line(r.position + Vector2(0, h * i), r.position + Vector2(r.size.x, h * i), mortar, 1.0)
+	canvas.draw_line(r.position + Vector2(r.size.x * 0.5, 0), r.position + Vector2(r.size.x * 0.5, h), mortar, 1.0)
+	canvas.draw_line(r.position + Vector2(r.size.x * 0.3, h * 2), r.position + Vector2(r.size.x * 0.3, r.size.y), mortar, 1.0)
+	canvas.draw_rect(r, brick_color.lightened(0.25), false, 1.0)

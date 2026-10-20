@@ -16,6 +16,7 @@ var thrower: Node2D
 const KNOCK_SPEED := 120.0   # slower than this and it only slides
 const HIT_RADIUS := 9.0
 var _velocity: Vector2 = Vector2.ZERO
+var _shine := BladeShine.new()
 
 
 func _ready() -> void:
@@ -77,7 +78,12 @@ func _hit_enemy() -> void:
 		return
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	if weapon and weapon.blade_shine:
+		var was := _shine.active()
+		_shine.update(delta, _velocity != Vector2.ZERO)
+		if was or _shine.active():
+			queue_redraw()
 	if _velocity != Vector2.ZERO:
 		queue_redraw()   # the spin frames turn over while it flies
 
@@ -93,11 +99,18 @@ func _draw() -> void:
 		var rect := WeaponData.frame_rect(weapon.thrown_texture, weapon.thrown_frames, frame)
 		draw_set_transform(Vector2.ZERO, -global_rotation)
 		draw_texture_rect_region(weapon.thrown_texture, Rect2(-rect.size / 2.0, rect.size), rect, tint)
+		if weapon.blade_shine:
+			var spin := float(frame) / weapon.thrown_frames * PI
+			_shine.draw(self, Vector2(-5, 0).rotated(spin), Vector2(5, 0).rotated(spin), 3.0)
 		draw_set_transform(Vector2.ZERO)
 		return
 	if weapon.floor_texture:
 		var size := weapon.floor_texture.get_size()
 		draw_texture(weapon.floor_texture, -size / 2.0, tint)
+		if weapon.blade_shine:
+			var line := BladeShine.blade_line(weapon.floor_texture, 1, 0)
+			if not line.is_empty():
+				_shine.draw(self, line[0], line[1], 3.0)
 		return
 	# Placeholder shape for a weapon with no art yet.
 	var c := weapon.color * tint
