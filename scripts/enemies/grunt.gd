@@ -821,6 +821,8 @@ func _attack_shift() -> float:
 
 ## The corpse the gore layer paints when it dies (empty = placeholder shapes).
 func _corpse() -> Dictionary:
+	if is_dog:
+		return {"dog": true}
 	if sheet == null:
 		return {}
 	var clean: int = CLEAN_CORPSES.pick_random()

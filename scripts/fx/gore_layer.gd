@@ -37,6 +37,8 @@ func _ready() -> void:
 	_viewport.size = area_size
 	_viewport.transparent_bg = true
 	_viewport.disable_3d = true
+	# Pixel art stays sharp when bodies are painted in (no blurring).
+	_viewport.canvas_item_default_texture_filter = Viewport.DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_NEAREST
 	# Clear the canvas only the very first time, then keep everything painted.
 	_viewport.render_target_clear_mode = SubViewport.CLEAR_MODE_ONCE
 	# Only re-render when there's something new to paint.
@@ -53,22 +55,63 @@ func _ready() -> void:
 	add_child(floor_image)
 
 
-## Paints a kill: a body lying where it fell, a pool under it and blood
-## sprayed in the hit direction. A bomb sprays in every direction.
+## Paints a kill: blood sprayed in the hit direction straight away, then a
+## DyingBody plays the next few seconds (legs twitching, spurts from the
+## wound, the pool spreading) and hands the body back to finish_kill() to be
+## painted for good. A bomb sprays in every direction and, at FULL blood,
+## tears the body apart at once (nothing left to twitch).
 ## `corpse` (optional) paints a sprite instead of the placeholder shapes:
-## {"texture": Texture2D, "region": Rect2, "burst_region": Rect2, "scale": float}.
+## {"texture": Texture2D, "region": Rect2, "burst_region": Rect2, "scale": float},
+## or {"dog": true} for the placeholder doberman.
 ## The sprite is drawn head-first along `direction`. "burst_region" (a burst
 ## head) is used for gun and bomb kills when blood is set to FULL.
 func add_kill(at: Vector2, direction: Vector2, body_color: Color, weapon: String, corpse: Dictionary = {}) -> void:
 	kill_count += 1
-	_pending.append({
+	var stamp := {
+		"kind": "spray",
 		"at": to_local(at),
 		"direction": direction.normalized() if direction != Vector2.ZERO else Vector2.RIGHT,
-		"body_color": body_color,
 		"explosive": weapon == "bomb",
-		"burst": weapon != "melee",
-		"corpse": corpse,
+	}
+	var full: bool = Game.blood_level == Game.BloodLevel.FULL
+	if stamp.explosive and full:
+		stamp.kind = "torn"
+		stamp.body_color = body_color
+		_queue(stamp)
+		return
+	_queue(stamp)
+	var dying := DyingBody.new()
+	dying.name = "DyingBody%d" % kill_count
+	dying.gore = self
+	dying.at = stamp.at
+	dying.direction = stamp.direction
+	dying.body_color = body_color
+	dying.corpse = corpse
+	dying.gory = weapon != "melee" and full
+	dying.blood_level = Game.blood_level
+	add_child(dying)
+
+
+## Blood drops from a spurt landing on the floor: [[position, size], ...].
+func add_stains(drops: Array) -> void:
+	_queue({"kind": "stains", "drops": drops})
+
+
+## The dying is over: paint its pool and body into the floor for good.
+func finish_kill(dying: DyingBody) -> void:
+	_queue({
+		"kind": "body",
+		"pool": dying.pool_polygon(dying.pool_radius()) if dying.pool_radius() > 0.5 else PackedVector2Array(),
+		"at": dying.at,
+		"direction": dying.direction,
+		"body_color": dying.body_color,
+		"corpse": dying.corpse,
+		"gory": dying.gory,
 	})
+
+
+func _queue(stamp: Dictionary) -> void:
+	_pending.append(stamp)
 	_painter.queue_redraw()
 	_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 	# Once this frame is drawn, forget the stamps so they're never painted twice.
@@ -83,29 +126,28 @@ func _clear_pending() -> void:
 
 func _paint_pending() -> void:
 	for stamp in _pending:
-		match Game.blood_level:
-			Game.BloodLevel.FULL:
-				_paint_blood(stamp.at, stamp.direction, stamp.explosive)
-			Game.BloodLevel.REDUCED:
-				_painter.draw_colored_polygon(_blob(stamp.at, 4.0, 6.0), dark_blood_color)
-			Game.BloodLevel.OFF:
-				pass
-		# Torn-apart bodies only at FULL; otherwise a bomb leaves an intact body.
-		var torn: bool = stamp.explosive and Game.blood_level == Game.BloodLevel.FULL
-		if stamp.corpse.is_empty():
-			_paint_body(stamp.at, stamp.direction, stamp.body_color, torn)
-		else:
-			var gory: bool = stamp.burst and Game.blood_level == Game.BloodLevel.FULL
-			_paint_corpse(stamp.at, stamp.direction, stamp.corpse, gory)
+		match stamp.kind:
+			"spray":
+				if Game.blood_level == Game.BloodLevel.FULL:
+					_paint_spray(stamp.at, stamp.direction, stamp.explosive)
+			"torn":
+				_painter.draw_colored_polygon(_blob(stamp.at, 7.0, 11.0), dark_blood_color)
+				_paint_spray(stamp.at, stamp.direction, true)
+				draw_body(_painter, stamp.at, stamp.direction, stamp.body_color, {"torn": true}, true)
+			"stains":
+				for drop in stamp.drops:
+					_painter.draw_circle(drop[0], drop[1], blood_color if randf() < 0.7 else dark_blood_color)
+			"body":
+				if stamp.pool.size() > 2:
+					_painter.draw_colored_polygon(stamp.pool, dark_blood_color)
+				draw_body(_painter, stamp.at, stamp.direction, stamp.body_color, stamp.corpse, stamp.gory)
 
 
-func _paint_blood(at: Vector2, direction: Vector2, explosive: bool) -> void:
+## Streaks and spray thrown in the hit direction (the pool comes later).
+func _paint_spray(at: Vector2, direction: Vector2, explosive: bool) -> void:
 	var spread := PI if explosive else deg_to_rad(35.0)   # how wide the spray is
 	var reach := 56.0 if explosive else 40.0
 	var drops := 70 if explosive else 40
-
-	# Pool under the body: an uneven blob.
-	_painter.draw_colored_polygon(_blob(at + direction * 4.0, 7.0, 11.0), dark_blood_color)
 
 	# Streaks: long smears thrown in the hit direction.
 	for i in (6 if explosive else 3):
@@ -123,32 +165,75 @@ func _paint_blood(at: Vector2, direction: Vector2, explosive: bool) -> void:
 		_painter.draw_circle(at + Vector2.from_angle(angle) * distance, randf_range(0.6, 2.4), color)
 
 
-## Placeholder body (shapes for now; the Art Director's corpse sprites
-## replace this in M5 without changing anything else).
-func _paint_body(at: Vector2, direction: Vector2, color: Color, explosive: bool) -> void:
-	var lying := color.darkened(0.35)
-	_painter.draw_set_transform(at + direction * 6.0, direction.angle())
-	if explosive:
-		# Torn apart: scattered chunks.
-		_painter.draw_set_transform(at, 0.0)
-		for i in 5:
-			var chunk := Vector2.from_angle(randf() * TAU) * randf_range(4.0, 22.0)
-			_painter.draw_circle(chunk, randf_range(1.5, 3.5), lying)
+## Draws a body lying on the floor onto `canvas` (the gore image, or a
+## DyingBody while it twitches). `legs` bends the legs by that many radians.
+static func draw_body(canvas: CanvasItem, at: Vector2, direction: Vector2, color: Color, corpse: Dictionary, gory: bool, legs: float = 0.0) -> void:
+	if corpse.get("torn", false):
+		_draw_torn(canvas, at, color)
+	elif corpse.get("dog", false):
+		_draw_dog(canvas, at, direction, legs)
+	elif corpse.has("texture"):
+		_draw_corpse(canvas, at, direction, corpse, gory, legs)
 	else:
-		_painter.draw_circle(Vector2.ZERO, 5.5, lying)              # torso
-		_painter.draw_circle(Vector2(8, 0), 3.5, lying)             # head, thrown back
-		_painter.draw_line(Vector2(-2, -3), Vector2(-9, -6), lying, 2.0)  # arm
-		_painter.draw_line(Vector2(-2, 3), Vector2(-10, 4), lying, 2.0)   # leg
-	_painter.draw_set_transform(Vector2.ZERO, 0.0)
+		_draw_placeholder(canvas, at, direction, color, legs)
 
 
-## A corpse sprite. Sheets draw bodies head-up, so turn "up" to the hit direction.
-func _paint_corpse(at: Vector2, direction: Vector2, corpse: Dictionary, gory: bool) -> void:
+## Placeholder body (shapes for now; the Art Director's corpse sprites
+## replace this without changing anything else).
+static func _draw_placeholder(canvas: CanvasItem, at: Vector2, direction: Vector2, color: Color, legs: float) -> void:
+	var lying := color.darkened(0.35)
+	canvas.draw_set_transform(at + direction * 6.0, direction.angle())
+	canvas.draw_circle(Vector2.ZERO, 5.5, lying)              # torso
+	canvas.draw_circle(Vector2(8, 0), 3.5, lying)             # head, thrown back
+	canvas.draw_line(Vector2(-2, -3), Vector2(-9, -6), lying, 2.0)  # arm
+	canvas.draw_line(Vector2(-2, 3), Vector2(-2, 3) + Vector2(-8, 1).rotated(legs), lying, 2.0)   # leg
+	canvas.draw_set_transform(Vector2.ZERO, 0.0)
+
+
+## Torn apart by a bomb: scattered chunks.
+static func _draw_torn(canvas: CanvasItem, at: Vector2, color: Color) -> void:
+	var lying := color.darkened(0.35)
+	for i in 5:
+		var chunk := Vector2.from_angle(randf() * TAU) * randf_range(4.0, 22.0)
+		canvas.draw_circle(at + chunk, randf_range(1.5, 3.5), lying)
+
+
+## The placeholder doberman, lying on its side with its legs out.
+static func _draw_dog(canvas: CanvasItem, at: Vector2, direction: Vector2, legs: float) -> void:
+	var coat := Color(0.1, 0.07, 0.06)
+	var tan := Color(0.55, 0.33, 0.16)
+	canvas.draw_set_transform(at, direction.angle())
+	for i in 4:   # legs, sticking out sideways, kicking
+		var hip := Vector2(-4.0 + 6.0 * (i % 2), 2.0)
+		var kick := legs * (1.0 if i < 2 else -1.0)
+		canvas.draw_line(hip, hip + Vector2(0.0, 5.0).rotated(kick), tan, 1.5)
+	var body := PackedVector2Array()
+	for i in 12:
+		body.append(Vector2.from_angle(TAU * i / 12.0) * Vector2(7.0, 3.5))
+	canvas.draw_colored_polygon(body, coat)
+	canvas.draw_circle(Vector2(8.5, 0.5), 2.6, coat)        # head
+	canvas.draw_line(Vector2(10.5, 0.8), Vector2(13.0, 1.4), tan, 1.6)   # snout
+	canvas.draw_line(Vector2(-7.0, 0.0), Vector2(-10.5, 1.5), coat, 1.0)  # tail
+	canvas.draw_set_transform(Vector2.ZERO, 0.0)
+
+
+## A corpse sprite. Sheets draw bodies head-up, so turn "up" to the hit
+## direction. The lower half (the legs) can be bent a little for the twitch.
+static func _draw_corpse(canvas: CanvasItem, at: Vector2, direction: Vector2, corpse: Dictionary, gory: bool, legs: float) -> void:
 	var region: Rect2 = corpse.burst_region if gory else corpse.region
 	var size: Vector2 = region.size
-	_painter.draw_set_transform(at, direction.angle() + PI * 0.5, Vector2.ONE * corpse.scale)
-	_painter.draw_texture_rect_region(corpse.texture, Rect2(-size * 0.5, size), region)
-	_painter.draw_set_transform(Vector2.ZERO, 0.0)
+	var base := Transform2D(direction.angle() + PI * 0.5, at) * Transform2D(0.0, Vector2.ONE * corpse.scale, 0.0, Vector2.ZERO)
+	if legs == 0.0:
+		canvas.draw_set_transform_matrix(base)
+		canvas.draw_texture_rect_region(corpse.texture, Rect2(-size * 0.5, size), region)
+	else:
+		var half := Vector2(size.x, size.y * 0.5)
+		canvas.draw_set_transform_matrix(base)
+		canvas.draw_texture_rect_region(corpse.texture, Rect2(-size * 0.5, half), Rect2(region.position, half))
+		# Legs: turned about the hips (the middle of the picture).
+		canvas.draw_set_transform_matrix(base * Transform2D(legs, Vector2.ZERO))
+		canvas.draw_texture_rect_region(corpse.texture, Rect2(Vector2(-size.x * 0.5, 0.0), half), Rect2(region.position + Vector2(0, half.y), half))
+	canvas.draw_set_transform(Vector2.ZERO, 0.0)
 
 
 ## A random lumpy circle, as a polygon.

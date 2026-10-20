@@ -861,5 +861,58 @@ func _initialize() -> void:
 	var dropped_by_dog := get_nodes_in_group("pickups").filter(func(p): return not old_pickups.has(p))
 	check(not dog.is_alive() and dropped_by_dog.is_empty(), "one hit kills it and it drops nothing")
 
+	# 38. Dying: legs twitch, blood pumps out in spurts, a pool spreads; then
+	# it is all painted into the floor. The blood setting turns it down.
+	var game = root.get_node("Game")
+	var dying_script = load("res://scripts/fx/dying_body.gd")
+	var gore_layer = main.get_node("Gore")
+	var dying_dog = gore_layer.get_children().filter(func(c): return c.get_script() == dying_script)
+	check(dying_dog.size() == 1 and dying_dog[0].corpse.get("dog", false), "the dog's body lies there dying (a doberman body)")
+	await reload_room(false)
+	main = current_scene
+	player = main.get_node("Player")
+	gore_layer = main.get_node("Gore")
+	var victim = load("res://scenes/enemies/grunt.tscn").instantiate()
+	victim.position = player.global_position + Vector2(40, 0)
+	main.add_child(victim)
+	await wait_frames(2)
+	victim.take_hit(player, Vector2.RIGHT, "melee")
+	var dying = gore_layer.get_children().filter(func(c): return c.get_script() == dying_script)
+	check(dying.size() == 1, "a kill leaves a dying body")
+	var twitches := {}
+	var most_drops := 0
+	var pool_at_half := 0.0
+	for i in 60:
+		await process_frame
+		twitches[snappedf(dying[0].leg_twitch(), 0.01)] = true
+		most_drops = maxi(most_drops, dying[0]._drops.size())
+	pool_at_half = dying[0].pool_radius()
+	check(twitches.size() > 5, "the legs shiver (%d different bends)" % twitches.size())
+	check(most_drops >= 4, "blood spurts out of the wound (%d drops in the air)" % most_drops)
+	check(pool_at_half > 3.0 and pool_at_half < dying_script.POOL_FULL, "the pool is still spreading (%.1f px)" % pool_at_half)
+	await create_timer(dying_script.DURATION).timeout
+	check(gore_layer.get_children().filter(func(c): return c.get_script() == dying_script).is_empty() and gore_layer.kill_count == 1, "afterwards the body and pool are painted into the floor")
+	for level in [game.BloodLevel.REDUCED, game.BloodLevel.OFF]:
+		game.blood_level = level
+		await reload_room(false)
+		main = current_scene
+		player = main.get_node("Player")
+		gore_layer = main.get_node("Gore")
+		victim = load("res://scenes/enemies/grunt.tscn").instantiate()
+		victim.position = player.global_position + Vector2(40, 0)
+		main.add_child(victim)
+		await wait_frames(2)
+		victim.take_hit(player, Vector2.RIGHT, "pistol")
+		dying = gore_layer.get_children().filter(func(c): return c.get_script() == dying_script)
+		most_drops = 0
+		for i in 60:
+			await process_frame
+			most_drops = maxi(most_drops, dying[0]._drops.size())
+		var label: String = game.BloodLevel.keys()[level]
+		check(most_drops == 0, "%s blood: no spurts" % label)
+		check(dying[0].pool_radius() <= dying_script.POOL_REDUCED and (level != game.BloodLevel.OFF or dying[0].pool_radius() == 0.0), "%s blood: %s" % [label, "a small pool" if level == game.BloodLevel.REDUCED else "no pool"])
+		check(not dying[0].gory, "%s blood: no burst head" % label)
+	game.blood_level = game.BloodLevel.FULL
+
 	print("\n%s (%d failure(s))" % ["ALL PASSED" if failures == 0 else "SOME FAILED", failures])
 	quit(failures)
