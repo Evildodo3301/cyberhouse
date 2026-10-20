@@ -15,6 +15,7 @@ so two letters).
 |---|---|
 | `#` | wall |
 | `W` | window wall: glass with the city behind it (blocks like a wall) |
+| `S` | stairs (a block of S's is one end of a staircase) |
 | `.` | floor |
 | `D` | swinging door. 4 in a row = one door. 8 in a row = a **double door** |
 | `o` | open doorway (an arch, no door) |
@@ -26,6 +27,24 @@ so two letters).
 
 The game works out the rooms by itself: any floor area closed off by walls
 and doors is one room.
+
+### Two floors in one level
+
+Draw both floors in the same Layout box, one above the other, with at least
+**20 rows of spaces** (open sky) between them so you never see the other
+floor on screen. The floor at the top is **floor 1**.
+
+Put a block of `S` on each floor where the stairs are, then link the two
+blocks with one line in the furniture list:
+
+```
+stairs 40 12 40 90     the S block at tile 40,12 goes to the S block at 40,90
+```
+
+Walk onto one end and you come out on the other floor, with a "FLOOR 2"
+banner. Step off the stairs before you can take them back. Enemies stay on
+their own floor. Make the Gore node's area_size cover the whole map
+(width x height in pixels, both floors).
 
 ## 2. The furniture list: one thing per line
 

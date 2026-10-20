@@ -21,6 +21,13 @@ extends Node2D
 ##   E  exit (opens once every enemy is dead)
 ##   W  window wall: floor-to-ceiling glass with the city behind it.
 ##      Blocks like a wall.
+##   S  stairs (a block of S's is one end of a staircase, see below)
+##
+## Two floors in one level: draw both floors in the same map with open sky
+## (spaces) between them, put a block of S's on each floor, and link the two
+## blocks with a furniture line "stairs x1 y1 x2 y2" (any tile of each
+## block). Walking onto one end takes you to the other. The floor at the top
+## of the map is floor 1. Enemies stay on their own floor.
 ##
 ## Rooms are worked out automatically: floor areas separated by walls and
 ## doorways. How enemies notice you is set per level (EnemySettings).
@@ -108,6 +115,7 @@ const FOOTPRINTS := {
 ## Wall decor (res://assets/levels/decor/<name>.png). Never solid.
 const WALL_DECOR := ["painting_gold", "painting_portrait", "sconce", "wall_clock", "wood_panel"]
 const DECOR_TURN := {"up": 0.0, "down": PI, "left": -PI / 2.0, "right": PI / 2.0}
+const STAIRS_SCRIPT := preload("res://scripts/levels/stairs.gd")
 ## Floor tiles in the interiors sheet. Rooms take turns: wood, brick, wood...
 const WOOD_TILES := [Rect2(96, 48, 16, 16), Rect2(112, 48, 16, 16)]
 const BRICK_TILES := [Rect2(48, 32, 16, 16), Rect2(48, 48, 16, 16)]
@@ -173,6 +181,11 @@ var _brick_rooms: Dictionary = {}   # room index -> true
 var _solid_rects: Array[Rect2] = []   # solid furniture, for patrol routes
 var _room_floor: Dictionary = {}    # room index -> a FANCY_FLOORS name
 var _window_tiles: Array[Vector2i] = []   # W tiles: walls drawn as glass
+var _floor_of_tile: Dictionary = {}   # Vector2i -> storey (1 = top of the map)
+var _stair_lines: Array[PackedInt32Array] = []   # x1 y1 x2 y2 per "stairs" line
+
+## You took the stairs to another floor (main shows "FLOOR 2").
+signal floor_changed(storey: int)
 
 
 func _ready() -> void:
@@ -197,6 +210,7 @@ func _ready() -> void:
 	_build_doorways()
 	_place_gang_rugs()
 	_place_furniture()
+	_build_stairs()
 	_spawn_things()
 	_build_navigation()
 	var floor_drawer := Node2D.new()
@@ -399,6 +413,9 @@ func _place_furniture() -> void:
 		if parts.size() == 3 and parts[0].begins_with("floor_") and FANCY_FLOORS.has(parts[0].trim_prefix("floor_")):
 			_room_floor[_room_of_tile.get(Vector2i(int(parts[1]), int(parts[2])), -1)] = parts[0].trim_prefix("floor_")
 			continue
+		if parts.size() == 5 and parts[0] == "stairs":
+			_stair_lines.append(PackedInt32Array([int(parts[1]), int(parts[2]), int(parts[3]), int(parts[4])]))
+			continue
 		if parts.size() == 4 and parts[0] in WALL_DECOR and DECOR_TURN.has(parts[3]):
 			_hang_decor(parts[0], Vector2i(int(parts[1]), int(parts[2])), parts[3])
 			continue
@@ -464,6 +481,70 @@ func _hang_decor(decor_name: String, at: Vector2i, side: String) -> void:
 	if tile(at) != "#":
 		push_warning("LevelMap: %s at %s is not on a wall" % [decor_name, at])
 	add_child(piece)
+
+
+## Works out which floor (storey) every walkable tile is on, then joins
+## each pair of S blocks named by a "stairs" line.
+func _build_stairs() -> void:
+	var walkable := func(at: Vector2i) -> bool: return _is_open(tile(at)) or tile(at) in ["D", "o"]
+	var storeys: Array[Vector2i] = []   # first tile of each storey, top of the map first
+	for at in _floor_tiles:
+		if _floor_of_tile.has(at):
+			continue
+		storeys.append(at)
+		var stack: Array[Vector2i] = [at]
+		_floor_of_tile[at] = storeys.size()
+		while not stack.is_empty():
+			var here: Vector2i = stack.pop_back()
+			for step in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+				var there: Vector2i = here + step
+				if walkable.call(there) and not _floor_of_tile.has(there):
+					_floor_of_tile[there] = storeys.size()
+					stack.append(there)
+	var count := 0
+	for line in _stair_lines:
+		var a := _stair_block(Vector2i(line[0], line[1]))
+		var b := _stair_block(Vector2i(line[2], line[3]))
+		if a.size == Vector2.ZERO or b.size == Vector2.ZERO:
+			push_warning("LevelMap: a stairs line doesn't point at two blocks of S")
+			continue
+		count += 1
+		var stairs: Node2D = STAIRS_SCRIPT.new()
+		stairs.name = "Stairs%d" % count
+		stairs.ends.assign([a, b])
+		stairs.floors.assign([storey_at(a.get_center()), storey_at(b.get_center())])
+		stairs.taken.connect(func(storey: int): floor_changed.emit(storey))
+		add_child(stairs)
+
+
+## The block of S tiles containing `at`, as a rectangle in map pixels.
+func _stair_block(at: Vector2i) -> Rect2:
+	if tile(at) != "S":
+		return Rect2()
+	var block := Rect2(Vector2(at) * tile_px, Vector2.ONE * tile_px)
+	var stack: Array[Vector2i] = [at]
+	var seen := {at: true}
+	while not stack.is_empty():
+		var here: Vector2i = stack.pop_back()
+		block = block.merge(Rect2(Vector2(here) * tile_px, Vector2.ONE * tile_px))
+		for step in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+			if tile(here + step) == "S" and not seen.has(here + step):
+				seen[here + step] = true
+				stack.append(here + step)
+	return block
+
+
+## Which floor a point is on (1 = the top of the map), or 0 off the floor.
+func storey_at(point: Vector2) -> int:
+	return _floor_of_tile.get(Vector2i((point / tile_px).floor()), 0)
+
+
+## How many floors the level has.
+func storey_count() -> int:
+	var most := 0
+	for storey in _floor_of_tile.values():
+		most = maxi(most, storey)
+	return most
 
 
 ## A straight run of D's becomes one swinging door hinged at its first tile.
@@ -668,6 +749,18 @@ func _draw_floor(canvas: Node2D) -> void:
 		var pick: Rect2 = tiles[(square.x * 7 + square.y * 13) % tiles.size()]
 		var part := Vector2(at.x % per, at.y % per) * tile_px
 		canvas.draw_texture_rect_region(sheet, rect, Rect2(pick.position + part, Vector2.ONE * mini(tile_px, 16)), tint)
+	# Stairs: dark treads with a light nosing line on each step.
+	for at in _floor_tiles:
+		if tile(at) != "S":
+			continue
+		var rect := Rect2(Vector2(at) * tile_px, Vector2.ONE * tile_px)
+		canvas.draw_rect(rect, Color(0.24, 0.15, 0.1), true)
+		var across := tile(at + Vector2i.LEFT) == "S" or tile(at + Vector2i.RIGHT) == "S"
+		for i in range(0, tile_px, 3):
+			if across:
+				canvas.draw_line(rect.position + Vector2(0, i), rect.position + Vector2(tile_px, i), Color(0.62, 0.48, 0.3), 1.0)
+			else:
+				canvas.draw_line(rect.position + Vector2(i, 0), rect.position + Vector2(i, tile_px), Color(0.62, 0.48, 0.3), 1.0)
 	# Marble rooms get a thin gold border a little in from the walls.
 	var inset := tile_px * 0.6
 	for at in _floor_tiles:

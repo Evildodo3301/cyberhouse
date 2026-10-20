@@ -47,6 +47,10 @@ func _ready() -> void:
 	var void_flash := VoidFlash.new()
 	void_flash.name = "VoidFlash"
 	add_child(void_flash)
+	# Two-floor levels: say which floor you're on when you take the stairs.
+	var map := get_node_or_null("LevelMap")
+	if map and map.has_signal("floor_changed"):
+		map.floor_changed.connect(func(storey: int): _show_banner("FLOOR %d" % storey))
 
 
 func _on_enemy_died(_enemy: Node2D) -> void:
