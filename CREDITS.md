@@ -38,6 +38,10 @@
 - **Level 1, floor 1** (`assets/levels/mansion/floor1/`): Fianso's
   reference picture of the house (AI-made, Fianso-supplied), cut into a
   floor image and 40 furniture pieces by the Art Director.
+- **Level 1, floor 2** (`assets/levels/mansion/floor2/`): Fianso's
+  floor-2 reference picture (AI-made, Fianso-supplied), cut into a floor
+  image and 46 furniture pieces by the Art Director. The way through the
+  foyer's painted double door is repainted with floor from the same picture.
 
 ## Everything else
 

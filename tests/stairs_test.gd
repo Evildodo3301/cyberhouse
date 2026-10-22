@@ -75,16 +75,19 @@ func _initialize() -> void:
 	check(current_scene.get_node("ScoreBoard").score == score, "with the score you had on floor 1")
 	check(player.weapon.id == &"machete", "and the weapon you were holding")
 
-	# Floor 2 itself (the Level Designer's draft, stand-in blocks for furniture).
+	# Floor 2 itself (Fianso's picture, the Level Designer's placements).
 	var map = current_scene.get_node("LevelMap")
 	var enemies: Array = root.get_tree().get_nodes_in_group("enemies")
 	check(enemies.size() == 5 and enemies.filter(func(e): return e.is_dog).size() == 1, "floor 2 has 4 people and a doberman (%d)" % enemies.size())
-	check(map.picture == null, "no picture yet: floor 2's art waits for Fianso's yes")
+	check(map.picture != null and root.get_tree().get_nodes_in_group("picture_pieces").size() == 46, "floor 2 is Fianso's picture with its 46 furniture pieces")
 	var space: PhysicsDirectSpaceState2D = player.get_world_2d().direct_space_state
 	var q := PhysicsPointQueryParameters2D.new()
-	q.position = t.call(18, 23)   # a bit of furniture (x) in the bedroom
+	q.position = t.call(18, 23)   # the bed in the left bedroom
 	q.collision_mask = 1
-	check(map.tile(Vector2i(18, 23)) == "x" and not space.intersect_point(q).is_empty(), "furniture stand-ins block")
+	check(not space.intersect_point(q).is_empty(), "the furniture blocks")
+	var door_row := range(21, 27).map(func(x): return map.tile(Vector2i(x, 35)))
+	var passage := range(29, 35).all(func(y): return range(21, 27).all(func(x): return map.tile(Vector2i(x, y)) == "."))
+	check(door_row.all(func(c): return c == "D") and passage, "the foyer's painted double door is a real door, with a way through to the hall")
 	var nav_map: RID = player.get_world_2d().navigation_map
 	await wait_frames(2)
 	var stuck := enemies.filter(func(e):
@@ -97,7 +100,7 @@ func _initialize() -> void:
 		var sq := PhysicsShapeQueryParameters2D.new()
 		sq.shape = circle
 		sq.transform = Transform2D(0.0, e.global_position)
-		sq.collision_mask = 1 | 32
+		sq.collision_mask = e.collision_mask & ~16   # walls, water and (people only) the keep-out round furniture
 		return not space.intersect_shape(sq).is_empty()).map(func(e): return e.name)
 	check(squeezed.is_empty(), "every enemy body fits where it starts on floor 2 %s" % [squeezed])
 	var floor2_exit = root.get_tree().get_first_node_in_group("exit")
