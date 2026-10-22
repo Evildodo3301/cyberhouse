@@ -263,7 +263,10 @@ func check_level(path: String, rendering: bool) -> void:
 	if pieces.is_empty():
 		note("no furniture art on this map yet (stand-in blocks): skipping the furniture sweep")
 	else:
-		var worst := sweep(reach, person_masks, owner_of, size, pieces)
+		# Is the person drawn above the whole furniture layer (not Y-sorted
+		# with it)? Then furniture can never be drawn over him.
+		var people_on_top: bool = not map.y_sort_enabled and map.get_node_or_null("Furniture") != null and player.get_index() > map.get_index()
+		var worst := sweep(reach, person_masks, owner_of, size, pieces, people_on_top)
 		var hidden_bad := []
 		var on_top_bad := []
 		for i in pieces.size():
@@ -491,7 +494,7 @@ func near_reached(reach: Dictionary, at: Vector2, within: float) -> bool:
 
 ## For each piece: the most of a person it can draw over (hidden) and the
 ## most of a person drawn over it (on_top), and where.
-func sweep(reach: Dictionary, masks: Array, owner_of: PackedInt32Array, size: Vector2i, pieces: Array) -> Array:
+func sweep(reach: Dictionary, masks: Array, owner_of: PackedInt32Array, size: Vector2i, pieces: Array, on_top_always := false) -> Array:
 	var worst := []
 	for i in pieces.size():
 		worst.append({"hidden": 0, "hidden_at": Vector2.ZERO, "hidden_facing": Vector2.DOWN, "on_top": 0, "on_top_at": Vector2.ZERO, "on_top_facing": Vector2.DOWN})
@@ -529,7 +532,7 @@ func sweep(reach: Dictionary, masks: Array, owner_of: PackedInt32Array, size: Ve
 				if i < 0:
 					continue
 				# Y-sort: whoever's base (position) is lower down is drawn later, on top.
-				if float(p.y) < pieces[i].global_position.y:
+				if not on_top_always and float(p.y) < pieces[i].global_position.y:
 					hidden[i] = hidden.get(i, 0) + 1
 				elif not floor_like[k]:
 					on_top[i] = on_top.get(i, 0) + 1

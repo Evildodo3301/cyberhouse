@@ -19,6 +19,9 @@ extends Sprite2D
 ## normal people in big rooms. 0.614 would be 1.5x (option D, tried and
 ## dropped). Change this one number to resize every HD character.
 static var room_scale := 0.409
+## Extra size per character on top of room_scale. The dog's frames come out
+## 0.75 m long next to a person; a doberman is about 1.1 m (QA's size check).
+const CHARACTER_SIZE := {"dog": 1.47}
 ## How far in front of the head the middle of a person's body is, in room px
 ## at room_scale 0.614 (it shrinks and grows with the body: 8 px now).
 const BODY_FORWARD := 12.0
@@ -91,13 +94,13 @@ func show_anim(anim: String, index: int) -> void:
 		current = name
 		texture = _texture(info.file)
 		hframes = int(info.frames)
-		scale = Vector2.ONE * float(info.game_scale) * room_scale
+		scale = Vector2.ONE * float(info.game_scale) * room_scale * CHARACTER_SIZE.get(who, 1.0)
 		var cell := Vector2(info.cell_w, info.cell_h)
 		offset = cell / 2.0 - Vector2(info.pivot[0], info.pivot[1])
 		if who != "dog":
 			offset.y -= BODY_FORWARD * room_scale / 0.614 / scale.y   # the frames face down: forward is +y
 		if material is ShaderMaterial and material.shader == IMPLANT_CODE:
-			material.set_shader_parameter("game_scale", float(info.game_scale) * room_scale)
+			material.set_shader_parameter("game_scale", float(info.game_scale) * room_scale * CHARACTER_SIZE.get(who, 1.0))
 	frame = clampi(index, 0, hframes - 1)
 
 
