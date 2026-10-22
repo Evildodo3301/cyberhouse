@@ -108,12 +108,18 @@ Things are stacked in layers, bottom to top:
 1. the floor
 2. rugs and doormats
 3. blood and bodies
-4. **furniture, people and dogs, sorted by how far down the screen they
-   stand**. Whoever is lower on the screen is drawn in front. This is called
-   "Y-sorting".
-5. walls
-6. wall decor (paintings etc.), so nobody is ever drawn on top of a painting
-7. bullets, then the crosshair
+4. **dogs** (they're short: they can run under tables and desks)
+5. **furniture**, sorted by how far down the screen it stands (whichever
+   piece is lower is drawn in front: "Y-sorting")
+6. **people**, always on top of furniture, so nobody ever looks like they
+   slip under a sofa or a table. People also keep a few pixels clear of
+   every piece's drawing (a "keep-out" box, `KEEP_OUT` in level_map.gd),
+   because the high-angle HD frames reach further than the 7 px body. So a
+   person's picture never covers the furniture either. Bullets, enemies'
+   eyes and dogs ignore the keep-out.
+7. walls
+8. wall decor (paintings etc.), so nobody is ever drawn on top of a painting
+9. bullets, then the crosshair
 
 ## 4. What blocks you (collision)
 

@@ -215,7 +215,7 @@ func check_level(path: String, rendering: bool) -> void:
 
 	# --- 4. Reachability (doors count as open) ---
 	var player_radius: float = player.get_node("CollisionShape2D").shape.radius
-	var reach := flood(player, player.global_position, player_radius, 1 | 32, size)
+	var reach := flood(player, player.global_position, player_radius, player.collision_mask & ~16, size)
 	note("%d spots a person can stand on" % reach.size())
 	var unreached_rooms := []
 	var rooms := {}
@@ -223,7 +223,7 @@ func check_level(path: String, rendering: bool) -> void:
 		rooms[map._room_of_tile[at]] = rooms.get(map._room_of_tile[at], []) + [at]
 	for room in rooms:
 		# Slivers too narrow for anyone to stand in (a strip outside the walls) don't count.
-		if not rooms[room].any(func(at): return body_fits(player, (Vector2(at) + Vector2(0.5, 0.5)) * map.tile_px, player_radius, 1 | 32)):
+		if not rooms[room].any(func(at): return body_fits(player, (Vector2(at) + Vector2(0.5, 0.5)) * map.tile_px, player_radius, player.collision_mask & ~16)):
 			continue
 		var hit := false
 		for at in rooms[room]:

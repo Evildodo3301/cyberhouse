@@ -38,7 +38,7 @@ func _initialize() -> void:
 
 	check(map.room_count() == 8, "8 rooms: kitchen, dining and bar, master suite, bath, office, living, gallery, foyer (%d)" % map.room_count())
 	check(enemies.size() == 12 and enemies.filter(func(e): return e.is_dog).size() == 2, "12 enemies, 2 of them dobermans (%d)" % enemies.size())
-	check(level.next_level == "" and level.y_sort_enabled and map.y_sort_enabled, "depth sorting is on for the level and the map")
+	check(level.next_level == "" and map.get_node("Furniture").y_sort_enabled and not map.y_sort_enabled, "furniture is depth-sorted among itself; people are drawn on top of it")
 	check(root.get_tree().get_first_node_in_group("exit") != null, "the penthouse has an exit")
 
 	# Window walls block like walls and are drawn as glass.
@@ -66,12 +66,12 @@ func _initialize() -> void:
 	check(decor.all(func(d): return not solid_at.call(d.global_position) or map.tile(Vector2i(d.global_position / 8.0)) == "#"), "decor adds no collision of its own")
 
 	# Furniture: base at the node position (for Y-sorting), footprints.
-	var plants: Array = map.get_children().filter(func(c): return c is Sprite2D and c.is_in_group("fancy_furniture") and c.texture.resource_path.ends_with("/plant.png"))
+	var plants: Array = map.get_node("Furniture").get_children().filter(func(c): return c is Sprite2D and c.is_in_group("fancy_furniture") and c.texture.resource_path.ends_with("/plant.png"))
 	check(plants.size() >= 6 and plants.all(func(p): return p.offset.y == -p.texture.get_size().y), "furniture stands at its base, so lower things draw in front")
 	var plant = plants[0]
 	var corner: Vector2 = plant.position + plant.offset
 	check(solid_at.call(corner + Vector2(6, 6)) and not solid_at.call(corner + Vector2(1, 1)), "a plant only blocks at its pot, not its leaves")
-	var sofa = map.get_children().filter(func(c): return c is Sprite2D and c.is_in_group("fancy_furniture") and c.texture.resource_path.ends_with("/white_sofa_long.png"))[0]
+	var sofa = map.get_node("Furniture").get_children().filter(func(c): return c is Sprite2D and c.is_in_group("fancy_furniture") and c.texture.resource_path.ends_with("/white_sofa_long.png"))[0]
 	var sofa_corner: Vector2 = sofa.position + sofa.offset
 	check(solid_at.call(sofa_corner + Vector2(3, 3)) and solid_at.call(sofa_corner + sofa.texture.get_size() - Vector2(3, 3)), "a sofa blocks with its whole shape")
 

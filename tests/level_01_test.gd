@@ -45,7 +45,17 @@ func _initialize() -> void:
 	var sofa_node = pieces.filter(func(p): return p.name == "SofaTop")[0]
 	check(sofa_node.position.y == sofa.sort_y and sofa_node.position.y + sofa_node.offset.y == sofa.y, "furniture stands at its base, so whoever is lower down is drawn in front")
 	var box := Rect2(sofa.collision[0], sofa.collision[1], sofa.collision[2], sofa.collision[3])
-	check(blocks.call(box.get_center(), 1) and not blocks.call(Vector2(sofa.x + 2, sofa.y + 2), 1), "the sofa blocks at its seat, not at the top of its back")
+	check(blocks.call(box.get_center(), 1) and not blocks.call(Vector2(sofa.x + 2, sofa.y + 2), 1), "bullets stop at the sofa's seat, not at the top of its back")
+	check(blocks.call(Vector2(sofa.x + 2, sofa.y + 2), 64) and blocks.call(Vector2(sofa.x + sofa.w / 2.0, sofa.y - 2), 64) and player.collision_mask & 64 != 0, "people keep clear of the whole sofa, back included (their picture never covers it)")
+	check(not map.y_sort_enabled and sofa_node.get_parent().name == "Furniture" and player.get_index() > map.get_index(), "people are drawn on top of furniture, never under it")
+	var dog_k = root.get_tree().get_nodes_in_group("enemies").filter(func(e): return e.is_dog)[0]
+	var people_k = root.get_tree().get_nodes_in_group("enemies").filter(func(e): return not e.is_dog)
+	var furniture_at: int = map.get_node("Furniture").get_index()
+	check(dog_k.get_index() < furniture_at and people_k.all(func(e): return e.get_index() > furniture_at), "dogs are drawn under furniture (they're short); enemies on top")
+	var table_body = map._low_bodies.filter(func(b): return b.position.distance_to(Vector2(364, 194)) < 4.0)
+	check(table_body.size() == 1 and dog_k.get_collision_exceptions().has(table_body[0]) and not people_k[0].get_collision_exceptions().has(table_body[0]), "dogs run under the coffee table; people can't")
+	check(dog_k.collision_mask & 64 == 0 and people_k.all(func(e): return e.collision_mask & 64 != 0), "dogs ignore people's keep-out round furniture")
+	check(not map._low_bodies.any(func(b): return b.position.distance_to(Vector2(364, 160.5)) < 4.0), "nobody, dogs included, goes under a sofa")
 	check(root.get_tree().get_nodes_in_group("rugs").is_empty(), "no gang rugs: the picture has its own")
 	var pool_tile := Vector2i(70, 5)
 	check(map.tile(pool_tile) == "~" and blocks.call(t.call(70, 5), 32) and not blocks.call(t.call(70, 5), 1 | 16), "the pool stops feet but not bullets")

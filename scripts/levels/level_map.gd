@@ -43,9 +43,9 @@ extends Node2D
 ## floor; other rooms get wood. Solid pieces block you,
 ## enemies and bullets (enemies path round them); rugs are floor decoration.
 ## Tall pieces (plants, lamps, statues) only block at their base (FOOTPRINTS),
-## so you can brush past their leaves or shade; everything standing on the floor is
-## drawn in order of how far down the screen its base is ("Y-sorting"), so
-## whoever is lower down is drawn in front.
+## so you can brush past their leaves or shade. Furniture is drawn in order of
+## how far down the screen its base is ("Y-sorting"); people and dogs are
+## always drawn on top of it.
 ##
 ## Wall decor goes in the same list with a fourth word, the wall it hangs on:
 ## "painting_gold 40 0 up" hangs a painting on the north wall, starting at
@@ -136,6 +136,13 @@ const DECOR_TURN := {"up": 0.0, "down": PI, "left": -PI / 2.0, "right": PI / 2.0
 const STAIRS_SCRIPT := preload("res://scripts/levels/stairs.gd")
 ## Physics layer for water: people can't walk in it, bullets fly over.
 const WATER_LAYER := 32
+## People's keep-out round furniture. The HD frames are drawn from a high
+## angle, so a person's picture reaches about 13 px from where he stands
+## while his body (hitbox) is 7 px round. A box this much bigger than each
+## piece's drawing, on its own layer, keeps the picture off the furniture
+## (Fianso: furniture never overlaps people). Bullets, eyes and dogs ignore it.
+const KEEP_OUT_LAYER := 64
+const KEEP_OUT := 3.0
 ## Floor tiles in the interiors sheet. Rooms take turns: wood, brick, wood...
 const WOOD_TILES := [Rect2(96, 48, 16, 16), Rect2(112, 48, 16, 16)]
 const BRICK_TILES := [Rect2(48, 32, 16, 16), Rect2(48, 48, 16, 16)]
@@ -216,6 +223,8 @@ var _patrols: Dictionary = {}    # Vector2i -> Array[Vector2] from "patrol" line
 var _facings: Dictionary = {}    # Vector2i -> degrees from "face" lines
 var _one_way_doors: Dictionary = {}   # Vector2i -> Vector2 from "door_out" lines
 var _exit_walk := Vector2.ZERO           # from the "exit_walk" line
+var _furniture_layer: Node2D             # furniture pieces, Y-sorted among themselves
+var _low_bodies: Array[StaticBody2D] = []   # tables and desks: dogs go under them
 var _doors_by_tile: Dictionary = {}   # Vector2i -> the door node(s) of that doorway
 
 ## You took the stairs to another floor (main shows "FLOOR 2").
@@ -231,10 +240,17 @@ func _ready() -> void:
 			if _rows[y][x] == "W":
 				_window_tiles.append(Vector2i(x, y))
 		_rows[y] = _rows[y].replace("W", "#")
-	# Furniture, enemies and the player (our sibling) are drawn lowest-base-last.
-	y_sort_enabled = true
+	# Furniture is drawn lowest-base-last among itself ("Y-sorting"), but
+	# always under the people and dogs: they never look like they slip under
+	# a sofa or a table (Fianso). Enemies come after the furniture in our
+	# children and the player is our sibling after us, so both draw on top.
+	y_sort_enabled = false
 	if get_parent() is Node2D:
-		get_parent().y_sort_enabled = true
+		get_parent().y_sort_enabled = false
+	_furniture_layer = Node2D.new()
+	_furniture_layer.name = "Furniture"
+	_furniture_layer.y_sort_enabled = true
+	add_child(_furniture_layer)
 	var width := 0
 	for row in _rows:
 		width = maxi(width, row.length())
@@ -522,7 +538,7 @@ func _place_furniture() -> void:
 		piece.offset = Vector2(0, -region.size.y)
 		if parts[0].ends_with("rug") or parts[0].begins_with("rug_"):
 			piece.z_index = -1   # rugs: on the floor, under the blood
-		add_child(piece)
+		_furniture_layer.add_child(piece)
 		if solid:
 			var foot: Rect2 = FOOTPRINTS.get(parts[0], Rect2(Vector2(1, 1), region.size - Vector2(2, 2)))
 			foot.position += corner
@@ -532,12 +548,16 @@ func _place_furniture() -> void:
 			body.collision_mask = 0
 			body.add_to_group("nav_walls")
 			body.position = foot.get_center()
+			if _is_low(parts[0]):
+				_low_bodies.append(body)
 			var shape := CollisionShape2D.new()
 			var rectangle := RectangleShape2D.new()
 			rectangle.size = foot.size
 			shape.shape = rectangle
 			body.add_child(shape)
 			add_child(body)
+		if solid:
+			_add_keep_out(_drawn_rect(piece.texture, region).grow(KEEP_OUT), corner, parts[0])
 
 
 ## Picture levels: each furniture piece cut out of the drawing stands on the
@@ -556,7 +576,7 @@ func _place_picture_pieces() -> void:
 		piece.position = Vector2(entry.x, entry.sort_y)
 		piece.offset = Vector2(0, entry.y - entry.sort_y)
 		piece.add_to_group("picture_pieces")
-		add_child(piece)
+		_furniture_layer.add_child(piece)
 		var box := Rect2(entry.collision[0], entry.collision[1], entry.collision[2], entry.collision[3])
 		_solid_rects.append(box)
 		var body := StaticBody2D.new()
@@ -564,12 +584,50 @@ func _place_picture_pieces() -> void:
 		body.collision_mask = 0
 		body.add_to_group("nav_walls")
 		body.position = box.get_center()
+		if _is_low(entry.name):
+			_low_bodies.append(body)
 		var shape := CollisionShape2D.new()
 		var rectangle := RectangleShape2D.new()
 		rectangle.size = box.size
 		shape.shape = rectangle
 		body.add_child(shape)
 		add_child(body)
+		_add_keep_out(_drawn_rect(piece.texture, Rect2(Vector2.ZERO, piece.texture.get_size())).grow(KEEP_OUT), Vector2(entry.x, entry.y), entry.name)
+
+
+## The part of `region` of `texture` that is actually drawn (not see-through),
+## relative to the region's corner.
+func _drawn_rect(texture: Texture2D, region: Rect2) -> Rect2:
+	var image := texture.get_image()
+	if image == null:
+		return Rect2(Vector2.ZERO, region.size)
+	if image.is_compressed():
+		image.decompress()
+	var used := image.get_region(Rect2i(region)).get_used_rect()
+	return Rect2(used) if used.has_area() else Rect2(Vector2.ZERO, region.size)
+
+
+## A box only people bump into (see KEEP_OUT); enemies path round it too.
+func _add_keep_out(rect: Rect2, corner: Vector2, piece_name := "") -> void:
+	var body := StaticBody2D.new()
+	body.name = "KeepOut"
+	body.collision_layer = KEEP_OUT_LAYER
+	body.collision_mask = 0
+	body.add_to_group("nav_walls")
+	body.add_to_group("keep_out")
+	body.set_meta("piece", piece_name)
+	body.position = corner + rect.get_center()
+	var shape := CollisionShape2D.new()
+	var rectangle := RectangleShape2D.new()
+	rectangle.size = rect.size
+	shape.shape = rectangle
+	body.add_child(shape)
+	add_child(body)
+
+
+## Tables and desks (by name): low enough for a dog to run under.
+func _is_low(piece_name: String) -> bool:
+	return piece_name.contains("table") or piece_name.contains("desk") and not piece_name.contains("chair") or piece_name.begins_with("dining") or piece_name.begins_with("console")
 
 
 ## A painting, sconce or similar on a wall: turned to face the room, drawn
@@ -735,6 +793,13 @@ func _spawn_things() -> void:
 				elif letter == "K" or rng.randf() < patrol_share:
 					grunt.patrol_points = _patrol_route(at, rng)
 				add_child(grunt)
+				if grunt.is_dog:
+					# Dogs are short: they run under tables and desks, drawn
+					# under the furniture. People never do (Fianso).
+					move_child(grunt, _furniture_layer.get_index())
+					grunt.collision_mask &= ~KEEP_OUT_LAYER
+					for body in _low_bodies:
+						grunt.add_collision_exception_with(body)
 			"g":
 				count["g"] += 1
 				var pickup: Node2D = PICKUP_SCENE.instantiate()
@@ -829,7 +894,7 @@ func _build_navigation() -> void:
 	]))
 	nav_polygon.agent_radius = 8.0
 	nav_polygon.parsed_geometry_type = NavigationPolygon.PARSED_GEOMETRY_STATIC_COLLIDERS
-	nav_polygon.parsed_collision_mask = 1 | WATER_LAYER
+	nav_polygon.parsed_collision_mask = 1 | WATER_LAYER | KEEP_OUT_LAYER
 	nav_polygon.source_geometry_mode = NavigationPolygon.SOURCE_GEOMETRY_GROUPS_WITH_CHILDREN
 	nav_polygon.source_geometry_group_name = &"nav_walls"
 	var region := NavigationRegion2D.new()
