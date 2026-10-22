@@ -55,7 +55,7 @@ func _initialize() -> void:
 	var terrace := doors.filter(func(d): return d.one_way != 0.0)
 	check(terrace.size() == 2, "the terrace door only swings out")
 	var exit_zone = root.get_tree().get_first_node_in_group("exit")
-	check(exit_zone != null and exit_zone.rect.has_point(t.call(45, 50)) and not exit_zone.open, "the exit is on the front steps, back to the car, and stays shut until everyone is dead")
+	check(exit_zone != null and exit_zone.rect.has_point(t.call(17, 42)) and exit_zone.walk == Vector2.LEFT and not exit_zone.open, "the exit is the stairs up to floor 2, shut until everyone is dead")
 
 	# Who is where (the Level Designer's placements).
 	var dogs := enemies.filter(func(e): return e.is_dog)

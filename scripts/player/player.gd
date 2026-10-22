@@ -74,6 +74,9 @@ const CROSSHAIR_TEXTURE := preload("res://assets/ui/crosshair.png")
 
 ## Set by main.gd. Can stay empty (keyboard only).
 var touch_controls: TouchControls
+## Set when the level takes over (walking up the stairs at the exit): you
+## walk this way on your own and the sticks and buttons do nothing.
+var auto_walk := Vector2.ZERO
 
 ## The direction the hitman is looking (always length 1). The torso shows it.
 var facing: Vector2 = Vector2.RIGHT
@@ -199,6 +202,8 @@ func _physics_process(delta: float) -> void:
 # ---------------------------------------------------------------- movement
 
 func _read_move_input() -> Vector2:
+	if auto_walk != Vector2.ZERO:
+		return auto_walk
 	if touch_controls and touch_controls.move_vector != Vector2.ZERO:
 		return touch_controls.move_vector.rotated(view_rotation)
 	return Input.get_vector("move_left", "move_right", "move_up", "move_down").rotated(view_rotation)
@@ -232,6 +237,8 @@ func _keyboard_aim() -> Vector2:
 
 ## The direction the player is actively aiming, or ZERO when not aiming.
 func get_aim_input() -> Vector2:
+	if auto_walk != Vector2.ZERO:
+		return Vector2.ZERO   # look where you're walking
 	if touch_controls and touch_controls.aim_vector != Vector2.ZERO:
 		return touch_controls.aim_vector.normalized().rotated(view_rotation)
 	return _keyboard_aim().normalized().rotated(view_rotation)
@@ -387,8 +394,8 @@ func _find_target(direction: Vector2, max_distance: float, max_degrees: float) -
 ## Ask for an attack. `direction` = where to swing, or ZERO for a quick tap
 ## (swing at the nearest target in front, or straight ahead if there is none).
 func request_attack(direction: Vector2) -> void:
-	if not _alive or _attack_state != AttackState.READY or _finishing:
-		return   # still swinging or recovering
+	if not _alive or _attack_state != AttackState.READY or _finishing or auto_walk != Vector2.ZERO:
+		return   # still swinging or recovering, or walking off up the stairs
 	var downed := _downed_enemy_here()
 	if downed:
 		_start_finisher(downed)
@@ -609,7 +616,7 @@ func is_finishing() -> bool:
 ## front). It knocks down the first enemy it hits, so you can finish them,
 ## then lies on the floor with its ammo. You're left with your fists.
 func request_throw(direction: Vector2) -> void:
-	if not _alive or weapon == settings.start_weapon:
+	if not _alive or weapon == settings.start_weapon or auto_walk != Vector2.ZERO:
 		return
 	if direction == Vector2.ZERO:
 		var aim := get_aim_input()
@@ -716,7 +723,7 @@ func _play_kill_feedback(target: Node2D) -> void:
 ## Throw a bomb. `direction` = where to throw, or ZERO for "where I'm aiming,
 ## or facing if I'm not aiming".
 func request_bomb(direction: Vector2) -> void:
-	if not _alive or bombs_left <= 0:
+	if not _alive or bombs_left <= 0 or auto_walk != Vector2.ZERO:
 		return
 	if direction == Vector2.ZERO:
 		var aim := get_aim_input()

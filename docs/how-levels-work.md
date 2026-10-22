@@ -48,6 +48,22 @@ banner. Step off the stairs before you can take them back. Enemies stay on
 their own floor. Make the Gore node's area_size cover the whole map
 (width x height in pixels, both floors).
 
+### Floors as separate maps (level 1, the mansion)
+
+Level 1 does it the other way: each floor is its own scene
+(`level_01.tscn` and `level_01_floor2.tscn`), so dying on floor 2 restarts
+floor 2 only. Floor 1's exit is its staircase: a block of `E` on the stairs
+plus the line `exit_walk west` (the way you walk up). Once everyone is dead,
+stepping on it makes the hero walk up the stairs on his own while the screen
+fades, then a loading screen shows the picture in the level's
+`stairs_picture` box (Fianso's drawing; a "UP THE STAIRS..." stand-in until
+then), and floor 2 (the level's `next_floor`) starts at its `P`. Score,
+combo, time and the weapon in your hands carry over. Floor 2's own `E`
+stairs with `exit_walk` end the level instead, since it has no `next_floor`.
+
+No picture yet? `x` tiles then stand in as plain dark blocks, so the floor
+can be played before its art is approved.
+
 ### Levels built from a picture (level 1)
 
 Level 1 is Fianso's own drawing of the house. In the LevelMap node:

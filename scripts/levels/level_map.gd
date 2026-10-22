@@ -22,7 +22,8 @@ extends Node2D
 ##   W  window wall: floor-to-ceiling glass with the city behind it.
 ##      Blocks like a wall.
 ##   S  stairs (a block of S's is one end of a staircase, see below)
-##   x  floor with furniture on it (picture levels: the piece itself blocks)
+##   x  floor with furniture on it (picture levels: the piece itself blocks;
+##      levels without a picture yet: a plain block stands in for it)
 ##   ~  pool water: you can't walk in it, but bullets fly over it
 ##
 ## Two floors in one level: draw both floors in the same map with open sky
@@ -59,6 +60,9 @@ extends Node2D
 ##   "face 12 21 west"      the enemy on tile (12, 21) starts facing west
 ##                          (north / south / east / west, or degrees)
 ##   "door_out 42 15 up"    the door on tile (42, 15) only swings that way
+##   "exit_walk west"       the exit is a staircase: once you step on it you
+##                          walk off that way on your own, then the screen
+##                          fades to the next floor (main.gd's next_floor)
 ##
 ## Picture levels: set `picture` to a finished drawing of the whole floor
 ## (walls, floors, paintings) and `picture_pieces` to its furniture list (a
@@ -211,6 +215,7 @@ var _stair_lines: Array[PackedInt32Array] = []   # x1 y1 x2 y2 per "stairs" line
 var _patrols: Dictionary = {}    # Vector2i -> Array[Vector2] from "patrol" lines
 var _facings: Dictionary = {}    # Vector2i -> degrees from "face" lines
 var _one_way_doors: Dictionary = {}   # Vector2i -> Vector2 from "door_out" lines
+var _exit_walk := Vector2.ZERO           # from the "exit_walk" line
 var _doors_by_tile: Dictionary = {}   # Vector2i -> the door node(s) of that doorway
 
 ## You took the stairs to another floor (main shows "FLOOR 2").
@@ -346,7 +351,7 @@ func _build_walls() -> void:
 		var x := 0
 		while x < _rows[y].length():
 			var letter := tile(Vector2i(x, y))
-			if not letter in ["#", " ", "~"]:
+			if not letter in ["#", " ", "~"] and not (letter == "x" and picture == null):
 				x += 1
 				continue
 			var start := x
@@ -479,6 +484,10 @@ func _place_furniture() -> void:
 		if parts.size() == 4 and parts[0] == "door_out" and DECOR_TURN.has(parts[3]):
 			var away := {"up": Vector2.UP, "down": Vector2.DOWN, "left": Vector2.LEFT, "right": Vector2.RIGHT}
 			_one_way_doors[Vector2i(int(parts[1]), int(parts[2]))] = away[parts[3]]
+			continue
+		if parts.size() == 2 and parts[0] == "exit_walk":
+			var compass := {"east": Vector2.RIGHT, "south": Vector2.DOWN, "west": Vector2.LEFT, "north": Vector2.UP}
+			_exit_walk = compass.get(parts[1], Vector2.ZERO)
 			continue
 		if parts.size() == 5 and parts[0] == "stairs":
 			_stair_lines.append(PackedInt32Array([int(parts[1]), int(parts[2]), int(parts[3]), int(parts[4])]))
@@ -759,6 +768,7 @@ func _spawn_things() -> void:
 		exit_zone.set_script(EXIT_SCRIPT)
 		exit_zone.name = "Exit"
 		exit_zone.rect = exit_rect
+		exit_zone.walk = _exit_walk
 		add_child(exit_zone)
 
 
@@ -860,6 +870,10 @@ func _draw_floor(canvas: Node2D) -> void:
 		var pick: Rect2 = tiles[(square.x * 7 + square.y * 13) % tiles.size()]
 		var part := Vector2(at.x % per, at.y % per) * tile_px
 		canvas.draw_texture_rect_region(sheet, rect, Rect2(pick.position + part, Vector2.ONE * mini(tile_px, 16)), tint)
+	# No picture yet: plain dark blocks stand in for the furniture.
+	for at in _floor_tiles:
+		if tile(at) == "x":
+			canvas.draw_rect(Rect2(Vector2(at) * tile_px, Vector2.ONE * tile_px), Color(0.2, 0.13, 0.1), true)
 	# Stairs: dark treads with a light nosing line on each step.
 	for at in _floor_tiles:
 		if tile(at) != "S":
