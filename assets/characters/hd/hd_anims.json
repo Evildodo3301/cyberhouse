@@ -1,0 +1,238 @@
+{
+ "anims": {
+  "hero_walk": {
+   "file": "hero_walk.png",
+   "frames": 12,
+   "cell_w": 88,
+   "cell_h": 138,
+   "fps": 12,
+   "loop": true,
+   "pivot": [
+    45,
+    27
+   ],
+   "game_scale": 0.459
+  },
+  "enemy_walk": {
+   "file": "enemy_walk.png",
+   "frames": 12,
+   "cell_w": 89,
+   "cell_h": 128,
+   "fps": 12,
+   "loop": true,
+   "pivot": [
+    46,
+    27
+   ],
+   "game_scale": 0.459
+  },
+  "dog_trot": {
+   "file": "dog_trot.png",
+   "frames": 12,
+   "cell_w": 70,
+   "cell_h": 209,
+   "fps": 14,
+   "loop": true,
+   "pivot": [
+    35,
+    101
+   ],
+   "game_scale": 0.289
+  },
+  "hero_punch": {
+   "file": "hero_punch.png",
+   "frames": 4,
+   "cell_w": 186,
+   "cell_h": 223,
+   "fps": 14,
+   "loop": false,
+   "pivot": [
+    93,
+    35
+   ],
+   "game_scale": 0.459
+  },
+  "enemy_punch": {
+   "file": "enemy_punch.png",
+   "frames": 4,
+   "cell_w": 174,
+   "cell_h": 208,
+   "fps": 14,
+   "loop": false,
+   "pivot": [
+    87,
+    31
+   ],
+   "game_scale": 0.459
+  },
+  "hero_machete": {
+   "file": "hero_machete.png",
+   "frames": 9,
+   "cell_w": 187,
+   "cell_h": 164,
+   "fps": 18,
+   "loop": false,
+   "pivot": [
+    119,
+    61
+   ],
+   "game_scale": 0.459
+  },
+  "enemy_machete": {
+   "file": "enemy_machete.png",
+   "frames": 9,
+   "cell_w": 182,
+   "cell_h": 184,
+   "fps": 18,
+   "loop": false,
+   "pivot": [
+    104,
+    70
+   ],
+   "game_scale": 0.459
+  },
+  "hero_pistol": {
+   "file": "hero_pistol.png",
+   "frames": 3,
+   "cell_w": 167,
+   "cell_h": 201,
+   "fps": 16,
+   "loop": false,
+   "pivot": [
+    83,
+    33
+   ],
+   "game_scale": 0.459
+  },
+  "enemy_pistol": {
+   "file": "enemy_pistol.png",
+   "frames": 3,
+   "cell_w": 171,
+   "cell_h": 206,
+   "fps": 16,
+   "loop": false,
+   "pivot": [
+    86,
+    32
+   ],
+   "game_scale": 0.459
+  },
+  "hero_shotgun": {
+   "file": "hero_shotgun.png",
+   "frames": 3,
+   "cell_w": 153,
+   "cell_h": 184,
+   "fps": 10,
+   "loop": false,
+   "pivot": [
+    76,
+    33
+   ],
+   "game_scale": 0.459
+  },
+  "enemy_shotgun": {
+   "file": "enemy_shotgun.png",
+   "frames": 3,
+   "cell_w": 159,
+   "cell_h": 191,
+   "fps": 10,
+   "loop": false,
+   "pivot": [
+    79,
+    32
+   ],
+   "game_scale": 0.459
+  },
+  "hero_machinegun": {
+   "file": "hero_machinegun.png",
+   "frames": 3,
+   "cell_w": 186,
+   "cell_h": 223,
+   "fps": 20,
+   "loop": true,
+   "pivot": [
+    93,
+    34
+   ],
+   "game_scale": 0.459
+  },
+  "enemy_machinegun": {
+   "file": "enemy_machinegun.png",
+   "frames": 3,
+   "cell_w": 165,
+   "cell_h": 198,
+   "fps": 20,
+   "loop": true,
+   "pivot": [
+    82,
+    31
+   ],
+   "game_scale": 0.459
+  },
+  "dog_bite": {
+   "file": "dog_bite.png",
+   "frames": 6,
+   "cell_w": 257,
+   "cell_h": 308,
+   "fps": 10,
+   "loop": false,
+   "pivot": [
+    128,
+    108
+   ],
+   "play_order": [
+    0,
+    0,
+    1,
+    2,
+    3,
+    4,
+    3,
+    4,
+    5
+   ],
+   "game_scale": 0.289
+  },
+  "hero_idle": {
+   "file": "hero_idle.png",
+   "frames": 1,
+   "cell_w": 236,
+   "cell_h": 256,
+   "fps": 1,
+   "loop": true,
+   "pivot": [
+    126,
+    73
+   ],
+   "game_scale": 0.2702
+  },
+  "enemy_idle": {
+   "file": "enemy_idle.png",
+   "frames": 1,
+   "cell_w": 256,
+   "cell_h": 246,
+   "fps": 1,
+   "loop": true,
+   "pivot": [
+    120,
+    84
+   ],
+   "game_scale": 0.28
+  },
+  "dog_idle": {
+   "file": "dog_idle.png",
+   "frames": 1,
+   "cell_w": 236,
+   "cell_h": 256,
+   "fps": 1,
+   "loop": true,
+   "pivot": [
+    112,
+    124
+   ],
+   "game_scale": 0.2444
+  }
+ },
+ "note": "All human sheets share one pixel scale (same head size); dog sheets share another. Set Sprite2D.scale = game_scale per animation: people come out ~58 px tall, the dog ~55 px long on the 640x360 viewport (option D = 1.5x). Every frame faces DOWN (+y): rotation = aim_angle - PI/2. pivot = rotation centre in cell pixels (set Sprite2D.offset = cell_centre - pivot, centered=true). Cells are equal-width horizontal strips (hframes = frames).",
+ "note_idle": "Programmer added the *_idle entries: scale matched to the walk frames (shoulder width; dog length), pivot at the head centre (dog: body centre)."
+}

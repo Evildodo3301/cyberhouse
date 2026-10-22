@@ -22,7 +22,7 @@ extends Resource
 ## the weapon files in res://data/weapons/.
 @export var start_weapon: WeaponData
 ## How close you must walk to a weapon on the floor to pick it up.
-@export var pickup_radius: float = 10.0
+@export var pickup_radius: float = 15.0
 ## What walking over a weapon does.
 ##   ALWAYS_SWAP: you switch to it, and what you held drops at your feet
 ##     (fists are never dropped). Walk off and back on to switch back.

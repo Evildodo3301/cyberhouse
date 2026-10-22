@@ -827,7 +827,7 @@ func _build_navigation() -> void:
 	nav_polygon.add_outline(PackedVector2Array([
 		Vector2.ZERO, Vector2(size_px.x, 0), size_px, Vector2(0, size_px.y),
 	]))
-	nav_polygon.agent_radius = 8.0
+	nav_polygon.agent_radius = 11.0   # bodies are 10.5 (Level Designer: 12 closes the 24 px corridors)
 	nav_polygon.parsed_geometry_type = NavigationPolygon.PARSED_GEOMETRY_STATIC_COLLIDERS
 	nav_polygon.parsed_collision_mask = 1 | WATER_LAYER
 	nav_polygon.source_geometry_mode = NavigationPolygon.SOURCE_GEOMETRY_GROUPS_WITH_CHILDREN

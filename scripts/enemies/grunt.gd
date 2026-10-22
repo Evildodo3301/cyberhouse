@@ -57,6 +57,12 @@ enum State { PATROL, ALERT, CHASE, ATTACK, SEARCH, KNOCKED_DOWN, DEAD, AIM }
 @export var body_color: Color = Color(0.45, 0.85, 0.35)   # toxic green (placeholder only)
 
 @export_group("Look")
+## The Art Director's HD frames (assets/characters/hd/, see HdBody):
+## "enemy" (the suit with the implant code), or empty for the old sheet.
+## Dogs always use the HD doberman.
+@export var hd_character: String = "enemy"
+## Room pixels walked per HD walk frame.
+@export var hd_stride_per_frame: float = 8.0
 ## Sprite sheet: 64 x 64 cells, 12 per row, drawn facing up. Row 1 = walk
 ## cycle, row 2 = corpses (odd columns have a burst head). Empty = placeholder shapes.
 @export var sheet: Texture2D
@@ -127,8 +133,15 @@ const KNOCKED_FRAME := SHEET_COLUMNS   # first corpse pose, no blood
 const CLEAN_CORPSES := [0, 2, 4, 6, 8, 9, 10, 11]
 const OUTLINE := preload("res://shaders/outline.gdshader")
 const FISTS := preload("res://data/weapons/fists.tres")
+## Which HD animation each weapon uses.
+const HD_ANIMS := {&"fists": "punch", &"machete": "machete", &"pistol": "pistol", &"shotgun": "shotgun", &"machine_gun": "machinegun"}
+## HD people are 1.5x the size of the old ones (option D).
+const HD_SIZE := 1.5
 
 var _sprite: Sprite2D
+var _hd: HdBody               # the HD body (whole body in one sprite)
+var _hd_attack: String = ""   # HD attack animation playing
+var _hd_attack_time: float = 0.0
 var _arms: Sprite2D    # the weapon's arms + weapon frames, on the body sprite
 var _shine := BladeShine.new()   # glint along a blade in hand
 var _overlay: Node2D   # eyes, "!", barks and telegraphs, drawn above the sprite
@@ -160,7 +173,13 @@ func _ready() -> void:
 	_overlay = Node2D.new()
 	_overlay.z_index = 1
 	_overlay.draw.connect(_draw_overlay)
-	if sheet:
+	var look := "dog" if is_dog else hd_character
+	if look != "":
+		_hd = HdBody.new()
+		_hd.name = "HdBody"
+		_hd.setup(look, Color.TRANSPARENT, look == "enemy")
+		add_child(_hd)
+	elif sheet:
 		_sprite = Sprite2D.new()
 		_sprite.texture = sheet
 		_sprite.hframes = SHEET_COLUMNS
@@ -267,6 +286,8 @@ func _enter(new_state: State) -> void:
 		_feint_cooldown = settings.feint_cooldown
 	_arrived = false
 	_look_time = 0.0
+	if new_state == State.ATTACK:
+		_start_hd_attack()
 	if new_state in [State.ATTACK, State.AIM]:
 		_struck = false
 		_attack_direction = global_position.direction_to(last_known_position)
@@ -468,16 +489,17 @@ func _aim(player: Node2D) -> void:
 
 func _shoot() -> void:
 	_muzzle_time = _muzzle_length()
+	_start_hd_attack()
 	var spread := deg_to_rad(randf_range(-carried_weapon.spread_degrees, carried_weapon.spread_degrees))
 	var bullet: Bullet = BULLET_SCENE.instantiate()
 	get_parent().add_child(bullet)
-	bullet.fire(global_position + _attack_direction * 8.0, _attack_direction.rotated(spread), carried_weapon, self)
+	bullet.fire(global_position + _attack_direction * 12.0, _attack_direction.rotated(spread), carried_weapon, self)
 	bullet.weapon_id = "grunt_gun"
 
 
 func _in_swing(player: Node2D) -> bool:
 	var to_player := player.global_position - global_position
-	if to_player.length() > settings.attack_range + 6.0:
+	if to_player.length() > settings.attack_range + 9.0:
 		return false
 	if to_player.length() < 8.0:
 		return true   # you're right on top of it: no angle can miss you
@@ -756,6 +778,9 @@ func _scatter(delta: float) -> void:
 ## Picks the sheet frame: walk cycle while moving, punch pose in the wind-up,
 ## lying pose when knocked down. The sheet faces up, so turn by +90 degrees.
 func _update_sprite(delta: float) -> void:
+	if _hd:
+		_update_hd(delta)
+		return
 	if _sprite == null:
 		_walked += velocity.length() * delta   # the placeholder dog's legs
 		return
@@ -785,6 +810,48 @@ func _update_sprite(delta: float) -> void:
 		_sprite.frame = int(_walked / stride_per_frame) % SHEET_COLUMNS
 	else:
 		_sprite.frame = 0
+
+
+## HD body: the attack playing, else the gun up while aiming or standing,
+## the walk while moving, or standing still. Knocked down: dark, still.
+func _update_hd(delta: float) -> void:
+	var moving := velocity.length() > 5.0
+	if moving:
+		_walked += velocity.length() * delta
+	_hd.face(facing)
+	_hd.position = Vector2.ZERO if _hd_attack != "" else facing * _attack_shift()
+	_hd.modulate = Color(0.55, 0.55, 0.55) if state == State.KNOCKED_DOWN else Color.WHITE
+	if _hd_attack != "":
+		_hd_attack_time += delta
+		if _hd_attack_time >= _hd.length(_hd_attack):
+			_hd_attack = ""
+	if state == State.KNOCKED_DOWN:
+		_hd_attack = ""
+		_hd.show_anim("idle", 0)
+	elif _hd_attack != "":
+		_hd.show_anim(_hd_attack, _hd.frame_at(_hd_attack, _hd_attack_time))
+	elif has_gun() and not moving and _hd.has_anim(_weapon_anim()):
+		_hd.show_anim(_weapon_anim(), 0)   # gun up
+	elif moving:
+		var walk := "trot" if is_dog else "walk"
+		_hd.show_anim(walk, int(_walked / hd_stride_per_frame) % _hd.frame_count(walk))
+	else:
+		_hd.show_anim("idle", 0)
+	if carried_weapon and carried_weapon.blade_shine:
+		_shine.update(delta, moving or state == State.ATTACK)
+
+
+## The HD animation for what it holds (a dog bites).
+func _weapon_anim() -> String:
+	if is_dog:
+		return "bite"
+	return HD_ANIMS.get(carried_weapon.id if carried_weapon else &"fists", "punch")
+
+
+func _start_hd_attack() -> void:
+	if _hd and _hd.has_anim(_weapon_anim()):
+		_hd_attack = _weapon_anim()
+		_hd_attack_time = 0.0
 
 
 ## Which arm frame to show (-1 = none): a weapon in hand always (frame 0),
@@ -847,7 +914,7 @@ func _draw() -> void:
 			cone.append(Vector2.from_angle(angle - half + 2.0 * half * i / 8.0) * settings.vision_range)
 		var alert := state in [State.ALERT, State.CHASE, State.ATTACK, State.AIM]
 		draw_colored_polygon(cone, Color(1, 0.2, 0.2, 0.07) if alert else Color(1, 1, 1, 0.04))
-	if _sprite:
+	if _sprite or _hd:
 		return   # the sprite shows the body
 	if is_dog:
 		_draw_dog(angle)
@@ -893,6 +960,12 @@ func _draw_dog(angle: float) -> void:
 	draw_set_transform(Vector2.ZERO, 0.0)
 
 
+## How far ahead the gun's barrel is drawn (the HD enemy holds it out at
+## the end of his body).
+func _muzzle_distance() -> float:
+	return 18.0 if _hd else 14.0
+
+
 ## How long the muzzle fire shows: the art's frames, or a quick flash.
 func _muzzle_length() -> float:
 	if carried_weapon and carried_weapon.fire_texture:
@@ -905,18 +978,28 @@ func _draw_overlay() -> void:
 	var o := _overlay
 	if state == State.KNOCKED_DOWN:
 		return
-	if _arms and _arms.visible and carried_weapon and carried_weapon.blade_shine:
+	if _hd and carried_weapon and carried_weapon.blade_shine:
+		var points := _hd.blade_points(o) if _hd.current.ends_with(_weapon_anim()) else []
+		if points.is_empty() and carried_weapon.floor_texture:
+			var size := carried_weapon.held_size() * HD_SIZE
+			var at := Transform2D(facing.angle(), facing.orthogonal() * 7.0 + facing * _attack_shift())
+			points = HdBody.held_blade_points(carried_weapon, at, Rect2(Vector2(0, -size.y / 2.0), size))
+		if points.size() == 2:
+			_shine.draw(o, points[0], points[1], 2.5)
+	elif _arms and _arms.visible and carried_weapon and carried_weapon.blade_shine:
 		var line := BladeShine.blade_line(_arms.texture, carried_weapon.attack_frames, _arms.frame)
 		if not line.is_empty():
 			var to_me := get_global_transform().affine_inverse() * _arms.get_global_transform()
 			_shine.draw(o, to_me * line[0], to_me * line[1], 2.5)
 	if carried_weapon:
 		# The gun it will drop, held at its side.
-		var hand := facing.orthogonal() * 5.0 + facing * 6.0
+		var hand := facing.orthogonal() * 7.0 if _hd else facing.orthogonal() * 5.0 + facing * 6.0
 		if carried_weapon.enemy_attack_overlay and _sprite:
 			pass   # the arm frames show the weapon in hand
+		elif _hd and _hd.current.ends_with(_weapon_anim()):
+			pass   # the HD frames show it (attacking, or gun up)
 		elif carried_weapon.floor_texture:
-			var size := carried_weapon.held_size()
+			var size := carried_weapon.held_size() * (HD_SIZE if _hd else 1.0)
 			o.draw_set_transform(hand + facing * _attack_shift(), facing.angle())
 			o.draw_texture_rect(carried_weapon.floor_texture, Rect2(Vector2(0, -size.y / 2.0), size), false)
 			o.draw_set_transform(Vector2.ZERO)
@@ -927,14 +1010,14 @@ func _draw_overlay() -> void:
 		if art and has_gun():
 			var frame := int((_muzzle_length() - _muzzle_time) * carried_weapon.fire_fps)
 			var rect := WeaponData.frame_rect(art, carried_weapon.fire_frames, frame)
-			o.draw_set_transform(facing * 14.0, facing.angle())
+			o.draw_set_transform(facing * _muzzle_distance(), facing.angle())
 			o.draw_texture_rect_region(art, Rect2(Vector2(0, -rect.size.y / 2.0), rect.size), rect)
 			o.draw_set_transform(Vector2.ZERO)
 		else:
-			o.draw_circle(facing * 14.0, 3.0, Color(1, 0.95, 0.6))
+			o.draw_circle(facing * _muzzle_distance(), 3.0, Color(1, 0.95, 0.6))
 	if tell_color.a > 0.0:
 		# Glowing eyes: this grunt has learned your moves.
-		var eyes := facing * 3.0
+		var eyes := facing * (-9.0 if _hd else 3.0)   # HD: the head is behind the middle of the body
 		o.draw_circle(eyes, 3.5, Color(tell_color, 0.25))
 		o.draw_circle(eyes + facing.orthogonal() * 2.0, 1.4, tell_color)
 		o.draw_circle(eyes - facing.orthogonal() * 2.0, 1.4, tell_color)

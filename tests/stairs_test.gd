@@ -85,6 +85,21 @@ func _initialize() -> void:
 	q.position = t.call(18, 23)   # a bit of furniture (x) in the bedroom
 	q.collision_mask = 1
 	check(map.tile(Vector2i(18, 23)) == "x" and not space.intersect_point(q).is_empty(), "furniture stand-ins block")
+	var nav_map: RID = player.get_world_2d().navigation_map
+	await wait_frames(2)
+	var stuck := enemies.filter(func(e):
+		var path := NavigationServer2D.map_get_path(nav_map, e.global_position, player.global_position, true)
+		return path.size() == 0 or path[path.size() - 1].distance_to(player.global_position) >= 12.0).map(func(e): return e.name)
+	check(stuck.is_empty(), "every enemy on floor 2 has a path to you %s" % [stuck])
+	var circle := CircleShape2D.new()
+	circle.radius = 10.5
+	var squeezed := enemies.filter(func(e):
+		var sq := PhysicsShapeQueryParameters2D.new()
+		sq.shape = circle
+		sq.transform = Transform2D(0.0, e.global_position)
+		sq.collision_mask = 1 | 32
+		return not space.intersect_shape(sq).is_empty()).map(func(e): return e.name)
+	check(squeezed.is_empty(), "every 1.5x enemy body fits where it starts on floor 2 %s" % [squeezed])
 	var floor2_exit = root.get_tree().get_first_node_in_group("exit")
 	check(floor2_exit.walk == Vector2.LEFT and not floor2_exit.open, "floor 2's exit is back down the stairs, shut for now")
 

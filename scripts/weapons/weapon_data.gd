@@ -17,7 +17,7 @@ enum Kind { MELEE, GUN }
 @export_group("Reach")
 ## Melee: how far the swing reaches. Gun: how far a bullet flies before it
 ## drops (the pistol: 72 px, a third of the screen; fists reach 24). The crosshair sits here.
-@export var reach: float = 24.0
+@export var reach: float = 36.0
 ## Melee only: how wide the swing is, in degrees.
 @export var arc_degrees: float = 90.0
 

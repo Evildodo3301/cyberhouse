@@ -751,49 +751,49 @@ func _initialize() -> void:
 	touch(0, Vector2(140, 250), false)
 	check(not guard.is_alive() and not player.is_finishing(), "after about 0.6 s the enemy is dead")
 
-	# 35. Attacks move the body; held weapons stay smaller than you.
+	# 35. Attacks play the HD frames; held weapons stay smaller than you.
 	await reload_room(false)
 	main = current_scene
 	player = main.get_node("Player")
 	player.global_position = Vector2(200, 200)
 	await wait_frames(2)
-	var torso: Node2D = player.get_node("Torso")
+	var hd: HdBody = player.get_node("HdBody")
 	player.equip(load("res://data/weapons/machete.tres"), -1)
-	var furthest := 0.0
-	var arm_frames := {}
-	var arms: Sprite2D = player._arms
 	await wait_frames(1)
-	check(arms.visible and arms.frame == 0, "a machete in hand shows the arms holding it")
+	check(hd.current == "hero_idle" and not player._hd_shows_weapon(), "a machete in hand is drawn in his hand at rest")
+	var swipe_frames := {}
 	player.request_attack(Vector2.RIGHT)
-	for i in 20:
+	for i in 40:
 		await physics_frame
-		furthest = maxf(furthest, torso.position.dot(player.facing))
-		arm_frames[arms.frame] = true
-	check(arm_frames.size() == 4, "a swing plays all 4 arm frames (%s)" % [arm_frames.keys()])
-	check(furthest > 2.0, "a swing lunges forward (%.1f px)" % furthest)
-	await wait_frames(10)
-	check(torso.position.length() < 0.01 and absf(angle_difference(torso.rotation, player.facing.angle())) < 0.01, "then it settles back to the aim")
+		if hd.current == "hero_machete":
+			swipe_frames[hd.frame] = true
+	check(swipe_frames.size() >= 7, "a swing plays the machete swipe (%d of 9 frames)" % swipe_frames.size())
+	check(hd.current != "hero_machete", "then it settles back")
 	player.equip(load("res://data/weapons/pistol.tres"), 8)
-	var kicked := 0.0
+	await wait_frames(2)
+	var shot_frames := {}
 	player.request_attack(Vector2.RIGHT)
-	for i in 6:
+	for i in 12:
 		await physics_frame
-		kicked = minf(kicked, torso.position.dot(player.facing))
-	check(kicked < -1.0, "a shot kicks you back (%.1f px)" % kicked)
+		if hd.current == "hero_pistol":
+			shot_frames[hd.frame] = true
+	check(shot_frames.size() >= 2, "a shot plays the pistol frames %s" % [shot_frames.keys()])
 	player.equip(load("res://data/weapons/fists.tres"), -1)
 	await wait_frames(20)
-	check(not arms.visible, "bare fists show no arm frames at rest")
+	check(hd.current == "hero_idle", "bare fists at rest: just standing")
 	player.request_attack(Vector2.RIGHT)
 	await wait_frames(2)
-	check(arms.visible, "a punch shows the punching arms")
+	check(hd.current == "hero_punch", "a punch shows the punch frames")
 	var thug = load("res://scenes/enemies/grunt.tscn").instantiate()
 	thug.carried_weapon = load("res://data/weapons/machete.tres")
 	thug.position = Vector2(400, 60)
 	main.add_child(thug)
 	await wait_frames(3)
-	check(thug._arms.visible and thug._arms.texture.resource_path.ends_with("enemy_machete_swing_4f.png"), "a machete enemy holds its machete in the enemy arm frames")
+	thug._enter(thug.State.ATTACK)
+	thug._update_hd(0.05)
+	check(thug.get_node("HdBody").current == "enemy_machete", "a machete enemy swings with the enemy machete frames")
 	var big_gun: WeaponData = load("res://data/weapons/machine_gun.tres")
-	check(big_gun.held_size().x <= 10.0, "the biggest held gun is shorter than you are wide (%.0f px)" % big_gun.held_size().x)
+	check(big_gun.held_size().x * player.HD_SIZE <= 15.0, "the biggest held gun is shorter than you are wide (%.0f px)" % (big_gun.held_size().x * player.HD_SIZE))
 
 	# 36. The machete's blade glints: now and then at rest, often while it moves.
 	var machete_data: WeaponData = load("res://data/weapons/machete.tres")

@@ -28,7 +28,7 @@ extends Resource
 ## How far it can see (8 character widths).
 @export var vision_range: float = 128.0
 ## It also notices you this close, even behind its back.
-@export var close_awareness_range: float = 16.0
+@export var close_awareness_range: float = 24.0
 ## When on, a door you open only alerts it if it can see that door (it is
 ## in its vision cone and nothing is in between), so you can slip in behind
 ## its back. Off = any door of its room alerts it.
@@ -42,7 +42,7 @@ extends Resource
 
 @export_group("Attack")
 ## Starts a swing when you're this close.
-@export var attack_range: float = 18.0
+@export var attack_range: float = 27.0
 ## Telegraph before its swing lands (a red arc shows it).
 @export var attack_windup: float = 0.18
 ## Pause after a swing before it can act again.
@@ -53,7 +53,7 @@ extends Resource
 @export_group("Charge")
 ## Close enough (px) and it bursts toward you to attack (melee enemies, and
 ## any enemy coming out of COVER).
-@export var charge_range: float = 56.0
+@export var charge_range: float = 84.0
 ## Burst speed, times chase_speed, and how long the burst lasts.
 @export var charge_speed: float = 1.4
 @export var charge_time: float = 0.5

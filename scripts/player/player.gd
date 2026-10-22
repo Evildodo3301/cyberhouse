@@ -36,7 +36,7 @@ const THROW_SPEED := 320.0
 const THROW_ASSIST_RANGE := 120.0
 ## Ground finisher: how close a downed enemy must be, how long it takes and
 ## how many blows land (the kill comes with the last one).
-const FINISH_RANGE := 22.0
+const FINISH_RANGE := 33.0
 const FINISH_TIME := 0.6
 ## Attack motion (until the attack frames arrive): swings twist the torso
 ## through the arc and lunge it forward; shots kick it back.
@@ -47,6 +47,10 @@ const LUNGE := 3.5           # pixels forward at the hit
 const RECOIL := 2.0          # pixels back per shot
 const RECOIL_TIME := 0.08
 const FINISH_BLOWS := 3
+## Which HD animation each weapon uses.
+const HD_ANIMS := {&"fists": "punch", &"machete": "machete", &"pistol": "pistol", &"shotgun": "shotgun", &"machine_gun": "machinegun"}
+## HD people are 1.5x the size of the old ones (option D).
+const HD_SIZE := 1.5
 const CROSSHAIR_TEXTURE := preload("res://assets/ui/crosshair.png")
 
 ## All the tuning numbers. Edit res://data/player_settings.tres to change them.
@@ -55,6 +59,11 @@ const CROSSHAIR_TEXTURE := preload("res://assets/ui/crosshair.png")
 @export var accent_color: Color = Color(0.16, 0.94, 1.0) # neon cyan
 
 @export_group("Look")
+## The Art Director's HD frames (assets/characters/hd/, see HdBody): "hero",
+## or empty for the old 64 px sheets below.
+@export var hd_character: String = "hero"
+## Room pixels walked per HD walk frame.
+@export var hd_stride_per_frame: float = 8.0
 ## Sprite sheets: one row of 38 frames, 64 x 64, drawn facing up.
 ## Frames: 0-1 idle, 2-11 walk, 12-23 melee, 24-35 pistol, 36-37 die.
 ## The hero's frames are full-body (legs included), so his legs sheet is
@@ -125,6 +134,9 @@ var _shine := BladeShine.new()   # glint along a blade in hand
 var _glint: Node2D           # draws it, above the body
 var _legs_sprite: Sprite2D   # the feet, on the legs (turn with the walk)
 var _idle_time: float = 0.0
+var _hd: HdBody               # the HD body (whole body in one sprite)
+var _hd_attack: String = ""   # HD attack animation playing ("punch", "pistol"...)
+var _hd_attack_time: float = 0.0
 var _muzzle_light: Sprite2D   # the circle of light a shot casts around you
 var _light_time: float = 0.0
 
@@ -153,7 +165,13 @@ func _ready() -> void:
 	# The parts are plain nodes so art can later drop a sprite into each one.
 	_legs.draw.connect(_draw_legs)
 	_torso.draw.connect(_draw_torso)
-	if torso_sheet and legs_sheet:
+	if hd_character != "":
+		_hd = HdBody.new()
+		_hd.name = "HdBody"
+		_hd.setup(hd_character, outline_color)
+		add_child(_hd)
+		move_child(_hd, 0)   # under the muzzle fire and the crosshair
+	elif torso_sheet and legs_sheet:
 		_legs_sprite = _make_sprite(legs_sheet)
 		_legs.add_child(_legs_sprite)
 		_sprite = _make_sprite(torso_sheet)
@@ -303,7 +321,9 @@ func _update_body(delta: float) -> void:
 	else:
 		_stride = 0.0   # idle: feet back together under the torso
 	_legs.rotation = legs_angle
-	if _sprite:
+	if _hd:
+		_update_hd(delta, speed > settings.legs_idle_speed)
+	elif _sprite:
 		_idle_time += delta
 		var walking := speed > settings.legs_idle_speed
 		var step := int(_stride / stride_per_frame)
@@ -314,6 +334,57 @@ func _update_body(delta: float) -> void:
 			_sprite.frame = WALK_FRAMES[step % 10] if walking else IDLE_FRAMES[idle_step % 2]
 		_legs_sprite.frame = WALK_FRAMES[step % 10] if walking else IDLE_FRAMES[0]
 		_update_arms()
+
+
+## HD body: the attack playing, else the gun held up while standing, the
+## walk while moving, or standing still.
+func _update_hd(delta: float, walking: bool) -> void:
+	_hd.face(facing)
+	if _hd_attack != "":
+		_hd_attack_time += delta
+		if _hd_attack_time >= _hd.length(_hd_attack) and not _finishing:
+			_hd_attack = ""
+	if _hd_attack != "":
+		_hd.show_anim(_hd_attack, _hd.frame_at(_hd_attack, _hd_attack_time))
+	elif has_gun() and not walking and _hd.has_anim(_weapon_anim()):
+		_hd.show_anim(_weapon_anim(), 0)   # aiming, gun up
+	elif walking:
+		_hd.show_anim("walk", int(_stride / hd_stride_per_frame) % _hd.frame_count("walk"))
+	else:
+		_hd.show_anim("idle", 0)
+	if weapon.blade_shine:
+		_shine.update(delta, walking or _hd_attack != "")
+	_torso.queue_redraw()
+	_glint.queue_redraw()
+
+
+## Where a weapon held in hand is drawn on the HD body (torso space, +x =
+## forward): a gun out in front, a blade in the right hand.
+func _held_rect() -> Rect2:
+	var size := weapon.held_size() * HD_SIZE
+	return Rect2(Vector2(2, -size.y / 2.0) if has_gun() else Vector2(0, 7 - size.y / 2.0), size)
+
+
+## How far ahead of you the gun's barrel is drawn (the HD hero holds it out
+## at the end of his body).
+func _muzzle_distance() -> float:
+	return 18.0 if _hd else 12.0
+
+
+## The HD animation for the weapon in hand.
+func _weapon_anim() -> String:
+	return HD_ANIMS.get(weapon.id, "punch")
+
+
+func _start_hd_attack() -> void:
+	if _hd and _hd.has_anim(_weapon_anim()):
+		_hd_attack = _weapon_anim()
+		_hd_attack_time = 0.0
+
+
+## True while the HD frames show the weapon (attacking, or a gun held up).
+func _hd_shows_weapon() -> bool:
+	return _hd.current.ends_with(_weapon_anim())
 
 
 ## The weapon's arm frames on top of the torso. A weapon in hand always shows
@@ -350,6 +421,11 @@ func _update_arms() -> void:
 
 ## The blade glint, running along the blade in the current arm frame.
 func _draw_glint() -> void:
+	if _hd and _alive and weapon.blade_shine:
+		var points := _hd.blade_points(self) if _hd_shows_weapon() else HdBody.held_blade_points(weapon, _torso.transform, _held_rect())
+		if points.size() == 2:
+			_shine.draw(_glint, points[0], points[1], 2.5)
+		return
 	if not _alive or not weapon.blade_shine or _arms == null or not _arms.visible:
 		return
 	var line := BladeShine.blade_line(_arms.texture, weapon.attack_frames, _arms.frame)
@@ -410,6 +486,8 @@ func request_attack(direction: Vector2) -> void:
 	facing = direction
 	_attack_state = AttackState.WINDUP
 	_attack_timer = weapon.windup_time
+	if not has_gun():
+		_start_hd_attack()
 	_last_attack = "gun" if has_gun() else "melee"
 	_last_attack_ms = Time.get_ticks_msec()
 
@@ -455,7 +533,7 @@ func _targets_in_swing(direction: Vector2) -> Array[Node2D]:
 			continue
 		var to_target := target.global_position - global_position
 		# A little extra reach for the target's own size.
-		if to_target.length() > weapon.reach + 8.0:
+		if to_target.length() > weapon.reach + 12.0:
 			continue
 		if absf(rad_to_deg(direction.angle_to(to_target))) > half_arc:
 			continue
@@ -485,6 +563,7 @@ func _fire() -> void:
 	_muzzle_flash = 0.05
 	_pose_time = 0.0
 	_start_fire_anim()
+	_start_hd_attack()
 	_light_time = LIGHT_TIME
 	for i in maxi(weapon.pellets, 1):
 		var spread := deg_to_rad(randf_range(-weapon.spread_degrees, weapon.spread_degrees))
@@ -597,6 +676,7 @@ func _update_finisher(delta: float) -> void:
 		_finish_blows += 1
 		_swing_flash = 0.06
 		_pose_time = 0.0
+		_start_hd_attack()
 		Game.shake(3.0, _attack_direction)
 	if _finish_blows >= FINISH_BLOWS:
 		var enemy := _finishing
@@ -817,11 +897,11 @@ func _draw() -> void:
 		return
 	_torso.scale = Vector2.ONE
 	var angle := _attack_direction.angle()
-	if _fire_anim >= 0.0 and weapon.fire_texture:
+	if _fire_anim >= 0.0 and weapon.fire_texture and (has_gun() or _hd == null):
 		var rect := WeaponData.frame_rect(weapon.fire_texture, weapon.fire_frames, int(_fire_anim * weapon.fire_fps))
 		if has_gun():
 			# Muzzle fire, starting at the end of the barrel.
-			draw_set_transform(_attack_direction * 12.0, angle)
+			draw_set_transform(_attack_direction * _muzzle_distance(), angle)
 			draw_texture_rect_region(weapon.fire_texture, Rect2(Vector2(0, -rect.size.y / 2.0), rect.size), rect)
 		else:
 			# The swing streak, sweeping through the arc.
@@ -830,9 +910,9 @@ func _draw() -> void:
 			draw_texture_rect_region(weapon.fire_texture, Rect2(-rect.size / 2.0, rect.size), rect)
 		draw_set_transform(Vector2.ZERO)
 	elif _muzzle_flash > 0.0:
-		draw_circle(_attack_direction * 12.0, 3.0, Color(1, 0.95, 0.6))   # no art: a plain flash
-	if has_gun():
-		return   # the swing arcs below are for melee only
+		draw_circle(_attack_direction * _muzzle_distance(), 3.0, Color(1, 0.95, 0.6))   # no art: a plain flash
+	if has_gun() or _hd:
+		return   # the swing arcs below are for melee only (the HD frames show the swing)
 
 	# Wind-up: a thin outline of where the swing is about to land.
 	var half_arc := deg_to_rad(weapon.arc_degrees * 0.5)
@@ -846,7 +926,7 @@ func _draw() -> void:
 # Both parts are drawn pointing right (+x). Their node rotation turns them.
 
 func _draw_legs() -> void:
-	if not _alive:
+	if not _alive or _hd:
 		return
 	# Feet swing forward and back in turn, one full cycle per stride_length.
 	var step := sin(_stride / maxf(settings.stride_length, 1.0) * TAU) * 6.0
@@ -859,6 +939,12 @@ func _draw_legs() -> void:
 
 func _draw_torso() -> void:
 	if not _alive:
+		return
+	if _hd:
+		# Walking or standing with a weapon: it's in his hand (the frames
+		# only show it while attacking or holding a gun up).
+		if weapon != settings.start_weapon and weapon.floor_texture and not _hd_shows_weapon():
+			_torso.draw_texture_rect(weapon.floor_texture, _held_rect(), false)
 		return
 	if _sprite:
 		if weapon.attack_overlay:

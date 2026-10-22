@@ -27,6 +27,11 @@
   can't be copyrighted; stores may ask for AI disclosure). The player's
   attack-arm frames are recoloured to match.
 
+- **HD characters** (`assets/characters/hd/`): the hero, the suit enemy
+  and the cyber doberman, made by the Art Director with Higgsfield (GPT
+  Image 2.5 and Grok Video 1.5) from Fianso's own AI reference sheets.
+  AI-generated: declare it on store pages. The implant glyphs
+  (`implant_glyphs.png`) are the Art Director's own, drawn in code.
 - **Stairs loading screen** (`assets/story/stairs_up.jpg`): Fianso's picture
   of the hero going up the stairs, made with Gemini (AI). Logged as
   Fianso-supplied AI art for the stores' AI disclosure.
