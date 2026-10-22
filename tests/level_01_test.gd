@@ -51,9 +51,7 @@ func _initialize() -> void:
 	check(map.tile(pool_tile) == "~" and blocks.call(t.call(70, 5), 32) and not blocks.call(t.call(70, 5), 1 | 16), "the pool stops feet but not bullets")
 	check(blocks.call(Vector2(-4, 20), 1) and blocks.call(Vector2(20, map.size_px.y + 4), 1), "you can't walk off the edge of the map")
 	var doors := root.get_tree().get_nodes_in_group("doors")
-	check(doors.size() == 5, "kitchen, office (2) and the terrace double door (2 leaves) = 5 door panels (%d)" % doors.size())
-	var terrace := doors.filter(func(d): return d.one_way != 0.0)
-	check(terrace.size() == 2, "the terrace door only swings out")
+	check(doors.size() == 3, "kitchen and office (2) = 3 door panels; the terrace door is wall again (%d)" % doors.size())
 	var exit_zone = root.get_tree().get_first_node_in_group("exit")
 	check(exit_zone != null and exit_zone.rect.has_point(t.call(17, 42)) and exit_zone.walk == Vector2.LEFT and not exit_zone.open, "the exit is the stairs up to floor 2, shut until everyone is dead")
 
@@ -67,7 +65,7 @@ func _initialize() -> void:
 	check(Array(by_tile.call(55, 38).patrol_points) == [t.call(55, 38), t.call(55, 19)], "the lounge guard walks up and down the lounge")
 	check(by_tile.call(66, 36).patrol_points.size() == 4, "the doberman walks a loop in the office")
 	check(is_equal_approx(by_tile.call(12, 21).start_facing_degrees, 180.0), "the cook faces west, his back to the lounge")
-	check(is_equal_approx(by_tile.call(75, 18).start_facing_degrees, 90.0) and by_tile.call(75, 18).has_gun(), "the boss sits behind the desk with a pistol, facing south")
+	check(is_equal_approx(by_tile.call(68, 20).start_facing_degrees, 90.0) and by_tile.call(68, 20).has_gun(), "the boss sits behind the desk with a pistol, facing south")
 	check(enemies.all(func(e): return e.settings.reaction_time >= 0.35 and not e.settings.notice_whole_room), "enemies only see in front of them, and react slowly")
 
 	# Everyone can reach you; nothing starts inside furniture.
@@ -92,11 +90,11 @@ func _initialize() -> void:
 	player.request_attack(Vector2.LEFT)
 	await wait_frames(20)
 	check(not cook.is_alive(), "sneak up behind him and take him out")
-	var boss = by_tile.call(75, 18)
+	var boss = by_tile.call(68, 20)
 	for e in enemies:
 		if e != boss:
 			e.set_physics_process(false)
-	player.global_position = t.call(75, 22)   # right in front of the desk
+	player.global_position = t.call(68, 23)   # right in front of the boss
 	await wait_frames(3)
 	check(boss.state in [1, 2, 7], "step in front of the boss and he notices you")
 	player.global_position = t.call(45, 48)
