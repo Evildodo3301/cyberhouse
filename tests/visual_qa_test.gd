@@ -56,6 +56,13 @@ const SIZES := {
 const DOG_LENGTH_M := [0.9, 1.3]
 ## A door you walk through alone (metres); double doors are twice that.
 const DOOR_M := [0.75, 1.1]
+## Areas nobody is meant to walk into, by a tile inside them (Fianso
+## 2026-10-22: the floor 1 garden and pool stay out of reach; on floor 2 the
+## same outdoor area is below the balcony).
+const FENCED_OFF := {
+	"level_01": [Vector2i(0, 0)],
+	"level_01_floor2": [Vector2i(0, 0)],
+}
 ## More than this many of a person's pixels covered by furniture = FAIL.
 const HIDDEN_LIMIT := 6
 ## Fianso's rule: furniture never overlaps a person (player or enemy), either
@@ -236,6 +243,9 @@ func check_level(path: String, rendering: bool) -> void:
 	for at in map._room_of_tile:
 		rooms[map._room_of_tile[at]] = rooms.get(map._room_of_tile[at], []) + [at]
 	for room in rooms:
+		var fenced: Array = FENCED_OFF.get(path.get_file().get_basename(), [])
+		if fenced.any(func(at): return map._room_of_tile.get(at, -1) == room):
+			continue
 		# Slivers too narrow for anyone to stand in (a strip outside the walls) don't count.
 		if not rooms[room].any(func(at): return body_fits(player, (Vector2(at) + Vector2(0.5, 0.5)) * map.tile_px, player_radius, player.collision_mask & ~16)):
 			continue
@@ -252,7 +262,7 @@ func check_level(path: String, rendering: bool) -> void:
 				lo = lo.min(at)
 				hi = hi.max(at)
 			unreached_rooms.append("%d tiles between tile %s and %s" % [rooms[room].size(), lo, hi])
-	check(unreached_rooms.is_empty(), "every area of the map can be walked into (or it is fenced off on purpose) %s" % [unreached_rooms], true)
+	check(unreached_rooms.is_empty(), "every area of the map can be walked into, apart from the ones fenced off on purpose %s" % [unreached_rooms], true)
 	var lost := []
 	for thing in enemies + root.get_tree().get_nodes_in_group("pickups"):
 		if not near_reached(reach, thing.global_position, 10.0):
