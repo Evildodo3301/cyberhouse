@@ -1,5 +1,6 @@
 extends SceneTree
-## Checks the HD characters (option D: sharper sprites, people 1.5x bigger):
+## Checks the HD characters (sharper sprites, people the old size so the
+## rooms look big):
 ## the hero, the suit enemy with the implant code and the cyber doberman
 ## use the Art Director's frames, walk, attack and stay the right size.
 ##   godot --headless --script res://tests/hd_characters_test.gd
@@ -38,12 +39,12 @@ func _initialize() -> void:
 	var dog_body: HdBody = dog.get_node("HdBody")
 	check(dog_body.texture.resource_path.begins_with("res://assets/characters/hd/dog_"), "the doberman is the HD cyber dog")
 
-	# Size: 1.5x the old people.
+	# Size: the old people's size (Fianso: normal people in big rooms).
 	var width: float = 83.0 * 0.459 * HdBody.room_scale   # the walk frame's shoulders, in room pixels
-	check(width > 21.0 and width < 26.0, "people are about 23 px across, 1.5x the old 15.6 (%.1f)" % width)
-	check(is_equal_approx(player.get_node("CollisionShape2D").shape.radius, 10.5) and is_equal_approx(people[0].get_node("CollisionShape2D").shape.radius, 10.5), "bodies are 1.5x (radius 10.5)")
-	check(is_equal_approx(load("res://data/weapons/fists.tres").reach, 36.0) and is_equal_approx(load("res://data/weapons/machete.tres").reach, 51.0), "fists and machete reach 1.5x as far")
-	check(is_equal_approx(people[0].settings.attack_range, 27.0) and is_equal_approx(dog.settings.attack_range, 24.0), "enemies and the dog attack from 1.5x as far")
+	check(width > 14.5 and width < 17.0, "people are about 16 px across, like the old 15.6 (%.1f)" % width)
+	check(is_equal_approx(player.get_node("CollisionShape2D").shape.radius, 7.0) and is_equal_approx(people[0].get_node("CollisionShape2D").shape.radius, 7.0), "bodies are the old size (radius 7)")
+	check(is_equal_approx(load("res://data/weapons/fists.tres").reach, 24.0) and is_equal_approx(load("res://data/weapons/machete.tres").reach, 34.0), "fists and machete reach as far as before")
+	check(is_equal_approx(people[0].settings.attack_range, 18.0) and is_equal_approx(dog.settings.attack_range, 16.0), "enemies and the dog attack from as far as before")
 
 	# Turning: the frames face down, so the body turns to the aim.
 	for e in enemies:

@@ -14,12 +14,13 @@ extends Sprite2D
 ## turns around its middle.
 
 ## The sheets' game_scale assumes one screen pixel per room pixel, but the
-## camera zooms in 3x. This brings the people to 1.5x the old ones in the
-## room (about 23 px across the shoulders, the dog about 33 px long), which
-## is option D. Change this one number to resize every HD character.
-static var room_scale := 0.614
+## camera zooms in 3x. This makes people the old size in the room (about
+## 16 px across the shoulders, the dog about 22 px long): Fianso wants
+## normal people in big rooms. 0.614 would be 1.5x (option D, tried and
+## dropped). Change this one number to resize every HD character.
+static var room_scale := 0.409
 ## How far in front of the head the middle of a person's body is, in room px
-## (at room_scale 0.614; it shrinks and grows with the body).
+## at room_scale 0.614 (it shrinks and grows with the body: 8 px now).
 const BODY_FORWARD := 12.0
 const ANIMS_FILE := "res://assets/characters/hd/hd_anims.json"
 const OUTLINE := preload("res://shaders/outline.gdshader")

@@ -135,8 +135,8 @@ const OUTLINE := preload("res://shaders/outline.gdshader")
 const FISTS := preload("res://data/weapons/fists.tres")
 ## Which HD animation each weapon uses.
 const HD_ANIMS := {&"fists": "punch", &"machete": "machete", &"pistol": "pistol", &"shotgun": "shotgun", &"machine_gun": "machinegun"}
-## HD people are 1.5x the size of the old ones (option D).
-const HD_SIZE := 1.5
+## Held weapons on the HD body: same size as on the old one.
+const HD_SIZE := 1.0
 
 var _sprite: Sprite2D
 var _hd: HdBody               # the HD body (whole body in one sprite)
@@ -493,13 +493,13 @@ func _shoot() -> void:
 	var spread := deg_to_rad(randf_range(-carried_weapon.spread_degrees, carried_weapon.spread_degrees))
 	var bullet: Bullet = BULLET_SCENE.instantiate()
 	get_parent().add_child(bullet)
-	bullet.fire(global_position + _attack_direction * 12.0, _attack_direction.rotated(spread), carried_weapon, self)
+	bullet.fire(global_position + _attack_direction * 8.0, _attack_direction.rotated(spread), carried_weapon, self)
 	bullet.weapon_id = "grunt_gun"
 
 
 func _in_swing(player: Node2D) -> bool:
 	var to_player := player.global_position - global_position
-	if to_player.length() > settings.attack_range + 9.0:
+	if to_player.length() > settings.attack_range + 6.0:
 		return false
 	if to_player.length() < 8.0:
 		return true   # you're right on top of it: no angle can miss you
@@ -963,7 +963,7 @@ func _draw_dog(angle: float) -> void:
 ## How far ahead the gun's barrel is drawn (the HD enemy holds it out at
 ## the end of his body).
 func _muzzle_distance() -> float:
-	return 18.0 if _hd else 14.0
+	return 12.0 if _hd else 14.0
 
 
 ## How long the muzzle fire shows: the art's frames, or a quick flash.
@@ -982,7 +982,7 @@ func _draw_overlay() -> void:
 		var points := _hd.blade_points(o) if _hd.current.ends_with(_weapon_anim()) else []
 		if points.is_empty() and carried_weapon.floor_texture:
 			var size := carried_weapon.held_size() * HD_SIZE
-			var at := Transform2D(facing.angle(), facing.orthogonal() * 7.0 + facing * _attack_shift())
+			var at := Transform2D(facing.angle(), facing.orthogonal() * 5.0 + facing * _attack_shift())
 			points = HdBody.held_blade_points(carried_weapon, at, Rect2(Vector2(0, -size.y / 2.0), size))
 		if points.size() == 2:
 			_shine.draw(o, points[0], points[1], 2.5)
@@ -993,7 +993,7 @@ func _draw_overlay() -> void:
 			_shine.draw(o, to_me * line[0], to_me * line[1], 2.5)
 	if carried_weapon:
 		# The gun it will drop, held at its side.
-		var hand := facing.orthogonal() * 7.0 if _hd else facing.orthogonal() * 5.0 + facing * 6.0
+		var hand := facing.orthogonal() * 5.0 if _hd else facing.orthogonal() * 5.0 + facing * 6.0
 		if carried_weapon.enemy_attack_overlay and _sprite:
 			pass   # the arm frames show the weapon in hand
 		elif _hd and _hd.current.ends_with(_weapon_anim()):
@@ -1017,7 +1017,7 @@ func _draw_overlay() -> void:
 			o.draw_circle(facing * _muzzle_distance(), 3.0, Color(1, 0.95, 0.6))
 	if tell_color.a > 0.0:
 		# Glowing eyes: this grunt has learned your moves.
-		var eyes := facing * (-9.0 if _hd else 3.0)   # HD: the head is behind the middle of the body
+		var eyes := facing * (-6.0 if _hd else 3.0)   # HD: the head is behind the middle of the body
 		o.draw_circle(eyes, 3.5, Color(tell_color, 0.25))
 		o.draw_circle(eyes + facing.orthogonal() * 2.0, 1.4, tell_color)
 		o.draw_circle(eyes - facing.orthogonal() * 2.0, 1.4, tell_color)

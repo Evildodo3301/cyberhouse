@@ -36,7 +36,7 @@ const THROW_SPEED := 320.0
 const THROW_ASSIST_RANGE := 120.0
 ## Ground finisher: how close a downed enemy must be, how long it takes and
 ## how many blows land (the kill comes with the last one).
-const FINISH_RANGE := 33.0
+const FINISH_RANGE := 22.0
 const FINISH_TIME := 0.6
 ## Attack motion (until the attack frames arrive): swings twist the torso
 ## through the arc and lunge it forward; shots kick it back.
@@ -49,8 +49,9 @@ const RECOIL_TIME := 0.08
 const FINISH_BLOWS := 3
 ## Which HD animation each weapon uses.
 const HD_ANIMS := {&"fists": "punch", &"machete": "machete", &"pistol": "pistol", &"shotgun": "shotgun", &"machine_gun": "machinegun"}
-## HD people are 1.5x the size of the old ones (option D).
-const HD_SIZE := 1.5
+## Held weapons on the HD body: same size as on the old one (Fianso: people
+## stay the old size, the rooms should look big).
+const HD_SIZE := 1.0
 const CROSSHAIR_TEXTURE := preload("res://assets/ui/crosshair.png")
 
 ## All the tuning numbers. Edit res://data/player_settings.tres to change them.
@@ -365,10 +366,9 @@ func _held_rect() -> Rect2:
 	return Rect2(Vector2(2, -size.y / 2.0) if has_gun() else Vector2(0, 7 - size.y / 2.0), size)
 
 
-## How far ahead of you the gun's barrel is drawn (the HD hero holds it out
-## at the end of his body).
+## How far ahead of you the gun's barrel is drawn.
 func _muzzle_distance() -> float:
-	return 18.0 if _hd else 12.0
+	return 12.0
 
 
 ## The HD animation for the weapon in hand.
@@ -533,7 +533,7 @@ func _targets_in_swing(direction: Vector2) -> Array[Node2D]:
 			continue
 		var to_target := target.global_position - global_position
 		# A little extra reach for the target's own size.
-		if to_target.length() > weapon.reach + 12.0:
+		if to_target.length() > weapon.reach + 8.0:
 			continue
 		if absf(rad_to_deg(direction.angle_to(to_target))) > half_arc:
 			continue

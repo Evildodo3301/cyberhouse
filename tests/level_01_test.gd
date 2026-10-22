@@ -78,14 +78,14 @@ func _initialize() -> void:
 	var spots: Array = enemies.map(func(e): return e.global_position) + pickups.map(func(p): return p.global_position)
 	check(spots.filter(func(at): return blocks.call(at, 1 | 32)).is_empty(), "no enemy or weapon starts inside furniture")
 	var circle := CircleShape2D.new()
-	circle.radius = 10.5
+	circle.radius = 7.0
 	var squeezed := enemies.filter(func(e):
 		var q := PhysicsShapeQueryParameters2D.new()
 		q.shape = circle
 		q.transform = Transform2D(0.0, e.global_position)
 		q.collision_mask = 1 | 32
 		return not space.intersect_shape(q).is_empty()).map(func(e): return e.name)
-	check(squeezed.is_empty(), "every 1.5x enemy body fits where it starts %s" % [squeezed])
+	check(squeezed.is_empty(), "every enemy body fits where it starts %s" % [squeezed])
 
 	# Sneaking: the cook doesn't hear you creep up behind him.
 	var cook = by_tile.call(12, 21)

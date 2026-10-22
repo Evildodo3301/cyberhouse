@@ -92,14 +92,14 @@ func _initialize() -> void:
 		return path.size() == 0 or path[path.size() - 1].distance_to(player.global_position) >= 12.0).map(func(e): return e.name)
 	check(stuck.is_empty(), "every enemy on floor 2 has a path to you %s" % [stuck])
 	var circle := CircleShape2D.new()
-	circle.radius = 10.5
+	circle.radius = 7.0
 	var squeezed := enemies.filter(func(e):
 		var sq := PhysicsShapeQueryParameters2D.new()
 		sq.shape = circle
 		sq.transform = Transform2D(0.0, e.global_position)
 		sq.collision_mask = 1 | 32
 		return not space.intersect_shape(sq).is_empty()).map(func(e): return e.name)
-	check(squeezed.is_empty(), "every 1.5x enemy body fits where it starts on floor 2 %s" % [squeezed])
+	check(squeezed.is_empty(), "every enemy body fits where it starts on floor 2 %s" % [squeezed])
 	var floor2_exit = root.get_tree().get_first_node_in_group("exit")
 	check(floor2_exit.walk == Vector2.LEFT and not floor2_exit.open, "floor 2's exit is back down the stairs, shut for now")
 
