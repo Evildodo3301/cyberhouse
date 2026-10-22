@@ -25,6 +25,9 @@ const PERSON_WIDTH_M := 0.5
 ## Real-life sizes seen from above, in metres: [long side min, max, short side min, max].
 ## The first key found in a piece's name wins, so longer names go first.
 const SIZES := {
+	"plant": [0.3, 1.0, 0.3, 1.0],   # before "bed": plant_bedroom_l is a plant
+	"statue": [0.4, 1.2, 0.4, 1.2],
+	"lamp": [0.3, 0.8, 0.3, 0.8],
 	"billiard": [2.4, 3.0, 1.3, 1.7],
 	"dining_set": [1.8, 3.4, 1.0, 2.2],
 	"dining_table": [1.6, 2.6, 0.8, 1.2],
@@ -46,11 +49,8 @@ const SIZES := {
 	"bed": [1.9, 2.4, 1.4, 2.3],
 	"fridge": [0.6, 0.95, 0.6, 0.95],
 	"cabinet": [0.6, 1.6, 0.4, 0.7],
-	"plant": [0.3, 1.0, 0.3, 1.0],
-	"statue": [0.4, 1.2, 0.4, 1.2],
 	"globe": [0.4, 0.9, 0.4, 0.9],
 	"dog_bed": [0.6, 1.2, 0.5, 1.0],
-	"lamp": [0.3, 0.8, 0.3, 0.8],
 }
 ## A doberman nose to tail, and across its back (metres).
 const DOG_LENGTH_M := [0.9, 1.3]
@@ -275,7 +275,10 @@ func check_level(path: String, rendering: bool) -> void:
 	else:
 		# Is the person drawn above the whole furniture layer (not Y-sorted
 		# with it)? Then furniture can never be drawn over him.
-		var people_on_top: bool = not map.y_sort_enabled and map.get_node_or_null("Furniture") != null and player.get_index() > map.get_index()
+		var people: Array = [player] + enemies.filter(func(e): return not e.is_dog)
+		var under := people.filter(func(who): return not drawn_above_furniture(who, map))
+		var people_on_top := under.is_empty()
+		check(people_on_top or not map.has_node("Furniture"), "the player and every enemy are drawn above the furniture layer %s" % [under.map(func(who): return who.name)])
 		var worst := sweep(reach, person_masks, owner_of, size, pieces, people_on_top)
 		var hidden_bad := []
 		var on_top_bad := []
@@ -374,6 +377,25 @@ func paint_piece(piece: Sprite2D, index: int, owner_of: PackedInt32Array, size: 
 	if count == 0:
 		return [Rect2i(), 0]
 	return [Rect2i(lo, hi - lo + Vector2i.ONE), count]
+
+
+## True if `who` is always drawn after (above) the map's whole furniture
+## layer: not Y-sorted together with it, and later in drawing order.
+func drawn_above_furniture(who: CanvasItem, map: Node2D) -> bool:
+	var layer := map.get_node_or_null("Furniture") as CanvasItem
+	if layer == null or map.y_sort_enabled:
+		return false
+	var z_who := who.z_index
+	var z_layer := layer.z_index
+	if z_who != z_layer:
+		return z_who > z_layer
+	# Same z: drawn in tree order, unless both sit under one Y-sorted parent.
+	var parent := who.get_parent()
+	while parent != null and parent is CanvasItem:
+		if parent.y_sort_enabled and parent.is_ancestor_of(layer):
+			return false
+		parent = parent.get_parent()
+	return who.is_greater_than(layer)
 
 
 func draws_after(a: Node2D, ia: int, b: Node2D, ib: int) -> bool:
