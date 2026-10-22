@@ -1,4 +1,4 @@
-[gd_scene load_steps=11 format=3]
+[gd_scene load_steps=12 format=3]
 
 [ext_resource type="Script" path="res://scripts/levels/main.gd" id="1_main"]
 [ext_resource type="Script" path="res://scripts/levels/level_map.gd" id="2_map"]
@@ -10,11 +10,13 @@
 [ext_resource type="Resource" path="res://data/easy_grunt_settings.tres" id="8_easy"]
 [ext_resource type="Resource" path="res://data/dog_settings.tres" id="9_dog"]
 [ext_resource type="Texture2D" path="res://assets/levels/mansion/floor1/floor1_base.png" id="10_picture"]
+[ext_resource type="Texture2D" path="res://assets/story/stairs_up.jpg" id="11_stairs"]
 
 [node name="Level01" type="Node2D"]
 script = ExtResource("1_main")
 room_id = &"level_01"
 next_floor = "res://scenes/levels/level_01_floor2.tscn"
+stairs_picture = ExtResource("11_stairs")
 
 [node name="Gore" type="Node2D" parent="."]
 script = ExtResource("3_gore")

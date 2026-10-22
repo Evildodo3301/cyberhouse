@@ -27,6 +27,9 @@
   can't be copyrighted; stores may ask for AI disclosure). The player's
   attack-arm frames are recoloured to match.
 
+- **Stairs loading screen** (`assets/story/stairs_up.jpg`): Fianso's picture
+  of the hero going up the stairs, made with Gemini (AI). Logged as
+  Fianso-supplied AI art for the stores' AI disclosure.
 - **Level 1, floor 1** (`assets/levels/mansion/floor1/`): Fianso's
   reference picture of the house (AI-made, Fianso-supplied), cut into a
   floor image and 40 furniture pieces by the Art Director.

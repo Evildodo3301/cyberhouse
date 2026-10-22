@@ -35,7 +35,7 @@ func go(path: String, picture: Texture2D) -> void:
 		shown.name = "Picture"
 		shown.texture = picture
 		shown.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		shown.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		shown.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED   # fills the screen, trims the edges
 		shown.set_anchors_preset(Control.PRESET_FULL_RECT)
 		shown.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_cover.add_child(shown)

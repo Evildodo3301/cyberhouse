@@ -64,7 +64,8 @@ func _initialize() -> void:
 	await wait_seconds(0.7)
 	var loading = game.get_node_or_null("LoadingScreen")
 	check(loading != null, "then the loading screen comes up")
-	check(loading != null and loading.find_child("StandIn", true, false) != null, "with a stand-in until Fianso's stairs picture is in")
+	var shown = loading.find_child("Picture", true, false) if loading else null
+	check(shown != null and shown.texture.resource_path == "res://assets/story/stairs_up.jpg", "showing Fianso's picture of the hero going up the stairs")
 	await wait_seconds(2.2)
 	await wait_frames(3)
 	check(current_scene.name == "Level01Floor2", "and you arrive on floor 2, its own map")
