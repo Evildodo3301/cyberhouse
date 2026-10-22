@@ -39,7 +39,7 @@ func _initialize() -> void:
 	check(dog_body.texture.resource_path.begins_with("res://assets/characters/hd/dog_"), "the doberman is the HD cyber dog")
 
 	# Size: 1.5x the old people.
-	var width: float = 83.0 * 0.459 * HdBody.ROOM_SCALE   # the walk frame's shoulders, in room pixels
+	var width: float = 83.0 * 0.459 * HdBody.room_scale   # the walk frame's shoulders, in room pixels
 	check(width > 21.0 and width < 26.0, "people are about 23 px across, 1.5x the old 15.6 (%.1f)" % width)
 	check(is_equal_approx(player.get_node("CollisionShape2D").shape.radius, 10.5) and is_equal_approx(people[0].get_node("CollisionShape2D").shape.radius, 10.5), "bodies are 1.5x (radius 10.5)")
 	check(is_equal_approx(load("res://data/weapons/fists.tres").reach, 36.0) and is_equal_approx(load("res://data/weapons/machete.tres").reach, 51.0), "fists and machete reach 1.5x as far")

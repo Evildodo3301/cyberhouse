@@ -17,8 +17,9 @@ extends Sprite2D
 ## camera zooms in 3x. This brings the people to 1.5x the old ones in the
 ## room (about 23 px across the shoulders, the dog about 33 px long), which
 ## is option D. Change this one number to resize every HD character.
-const ROOM_SCALE := 0.614
-## How far in front of the head the middle of a person's body is, in room px.
+static var room_scale := 0.614
+## How far in front of the head the middle of a person's body is, in room px
+## (at room_scale 0.614; it shrinks and grows with the body).
 const BODY_FORWARD := 12.0
 const ANIMS_FILE := "res://assets/characters/hd/hd_anims.json"
 const OUTLINE := preload("res://shaders/outline.gdshader")
@@ -89,13 +90,13 @@ func show_anim(anim: String, index: int) -> void:
 		current = name
 		texture = _texture(info.file)
 		hframes = int(info.frames)
-		scale = Vector2.ONE * float(info.game_scale) * ROOM_SCALE
+		scale = Vector2.ONE * float(info.game_scale) * room_scale
 		var cell := Vector2(info.cell_w, info.cell_h)
 		offset = cell / 2.0 - Vector2(info.pivot[0], info.pivot[1])
 		if who != "dog":
-			offset.y -= BODY_FORWARD / scale.y   # the frames face down: forward is +y
+			offset.y -= BODY_FORWARD * room_scale / 0.614 / scale.y   # the frames face down: forward is +y
 		if material is ShaderMaterial and material.shader == IMPLANT_CODE:
-			material.set_shader_parameter("game_scale", float(info.game_scale) * ROOM_SCALE)
+			material.set_shader_parameter("game_scale", float(info.game_scale) * room_scale)
 	frame = clampi(index, 0, hframes - 1)
 
 
