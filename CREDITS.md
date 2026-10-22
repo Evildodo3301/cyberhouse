@@ -27,6 +27,10 @@
   can't be copyrighted; stores may ask for AI disclosure). The player's
   attack-arm frames are recoloured to match.
 
+- **Level 1, floor 1** (`assets/levels/mansion/floor1/`): Fianso's
+  reference picture of the house (AI-made, Fianso-supplied), cut into a
+  floor image and 40 furniture pieces by the Art Director.
+
 ## Everything else
 
 Code, crosshair (from the Creative Director's design), weapon art

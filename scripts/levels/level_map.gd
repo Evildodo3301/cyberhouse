@@ -22,6 +22,8 @@ extends Node2D
 ##   W  window wall: floor-to-ceiling glass with the city behind it.
 ##      Blocks like a wall.
 ##   S  stairs (a block of S's is one end of a staircase, see below)
+##   x  floor with furniture on it (picture levels: the piece itself blocks)
+##   ~  pool water: you can't walk in it, but bullets fly over it
 ##
 ## Two floors in one level: draw both floors in the same map with open sky
 ## (spaces) between them, put a block of S's on each floor, and link the two
@@ -50,6 +52,18 @@ extends Node2D
 ## wall. Decor is drawn on top of the wall, so it is never under anyone, and
 ## it isn't solid. Art: res://assets/levels/decor/<name>.png, drawn as if on
 ## a north wall (its bottom edge faces the room); it is turned for the others.
+##
+## More lines for enemies and doors:
+##   "patrol 55 38 55 19"   the enemy on tile (55, 38) walks to (55, 19) and
+##                          back (list as many points as you like: a loop)
+##   "face 12 21 west"      the enemy on tile (12, 21) starts facing west
+##                          (north / south / east / west, or degrees)
+##   "door_out 42 15 up"    the door on tile (42, 15) only swings that way
+##
+## Picture levels: set `picture` to a finished drawing of the whole floor
+## (walls, floors, paintings) and `picture_pieces` to its furniture list (a
+## JSON file: each piece's picture, where it stands, and the box that
+## blocks). The text map then only says what blocks and where things start.
 ## Art: Pixel 16 Interiors (free version) by zedpxl, see CREDITS.md.
 
 const MACHETE := preload("res://data/weapons/machete.tres")
@@ -116,6 +130,8 @@ const FOOTPRINTS := {
 const WALL_DECOR := ["painting_gold", "painting_portrait", "sconce", "wall_clock", "wood_panel"]
 const DECOR_TURN := {"up": 0.0, "down": PI, "left": -PI / 2.0, "right": PI / 2.0}
 const STAIRS_SCRIPT := preload("res://scripts/levels/stairs.gd")
+## Physics layer for water: people can't walk in it, bullets fly over.
+const WATER_LAYER := 32
 ## Floor tiles in the interiors sheet. Rooms take turns: wood, brick, wood...
 const WOOD_TILES := [Rect2(96, 48, 16, 16), Rect2(112, 48, 16, 16)]
 const BRICK_TILES := [Rect2(48, 32, 16, 16), Rect2(48, 48, 16, 16)]
@@ -162,6 +178,15 @@ enum WallStyle { NEON, PLASTER }
 ## the level's file name, so the carpets stay put on every retry.
 @export var rug_seed: int = 0
 
+@export_group("Picture level")
+## A finished drawing of the whole floor, 1 px = 1 game px, top-left at 0, 0.
+@export var picture: Texture2D
+## Its furniture: JSON with "pieces": [{name, x, y, sort_y, collision: [x, y, w, h]}].
+## Each piece's image is pieces/<name>.png next to the JSON file.
+@export_file("*.json") var picture_pieces: String = ""
+## Door colour on picture levels (dark wood instead of neon).
+@export var door_color: Color = Color(0.95, 0.55, 0.15)
+
 @export_group("Enemies")
 ## Tuning for the enemies this map spawns (empty = each keeps its own).
 @export var enemy_settings: EnemySettings
@@ -183,6 +208,10 @@ var _room_floor: Dictionary = {}    # room index -> a FANCY_FLOORS name
 var _window_tiles: Array[Vector2i] = []   # W tiles: walls drawn as glass
 var _floor_of_tile: Dictionary = {}   # Vector2i -> storey (1 = top of the map)
 var _stair_lines: Array[PackedInt32Array] = []   # x1 y1 x2 y2 per "stairs" line
+var _patrols: Dictionary = {}    # Vector2i -> Array[Vector2] from "patrol" lines
+var _facings: Dictionary = {}    # Vector2i -> degrees from "face" lines
+var _one_way_doors: Dictionary = {}   # Vector2i -> Vector2 from "door_out" lines
+var _doors_by_tile: Dictionary = {}   # Vector2i -> the door node(s) of that doorway
 
 ## You took the stairs to another floor (main shows "FLOOR 2").
 signal floor_changed(storey: int)
@@ -208,17 +237,24 @@ func _ready() -> void:
 	_find_rooms()
 	_build_walls()
 	_build_doorways()
-	_place_gang_rugs()
+	if picture == null:
+		_place_gang_rugs()
 	_place_furniture()
+	_place_picture_pieces()
+	for at in _one_way_doors:
+		for door in _doors_by_tile.get(at, []):
+			door.open_only_toward(_one_way_doors[at])
 	_build_stairs()
 	_spawn_things()
 	_build_navigation()
 	var floor_drawer := Node2D.new()
 	floor_drawer.z_index = -2   # under the rugs and the blood
+	floor_drawer.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	floor_drawer.draw.connect(_draw_floor.bind(floor_drawer))
 	add_child(floor_drawer)
 	var wall_drawer := Node2D.new()
 	wall_drawer.z_index = 1     # walls cover any blood that splashes onto them
+	wall_drawer.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	wall_drawer.draw.connect(_draw_walls.bind(wall_drawer))
 	add_child(wall_drawer)
 
@@ -273,7 +309,7 @@ func room_count() -> int:
 # ------------------------------------------------------------------ build
 
 func _is_open(letter: String) -> bool:
-	return not letter in ["#", "D", "o", " "]
+	return not letter in ["#", "D", "o", " ", "~"]
 
 
 ## Flood-fills every floor area that walls and doorways separate.
@@ -310,7 +346,7 @@ func _build_walls() -> void:
 		var x := 0
 		while x < _rows[y].length():
 			var letter := tile(Vector2i(x, y))
-			if letter != "#" and letter != " ":
+			if not letter in ["#", " ", "~"]:
 				x += 1
 				continue
 			var start := x
@@ -320,7 +356,8 @@ func _build_walls() -> void:
 			if letter == "#":
 				_walls.append(rect)
 			var body := StaticBody2D.new()
-			body.collision_layer = 1   # layer 1 = "world"
+			# Layer 1 = "world" (stops bullets too); 32 = water (stops feet only).
+			body.collision_layer = WATER_LAYER if letter == "~" else 1
 			body.collision_mask = 0
 			body.add_to_group("nav_walls")   # enemies' pathfinding avoids these
 			body.position = rect.get_center()
@@ -330,6 +367,22 @@ func _build_walls() -> void:
 			shape.shape = rectangle
 			body.add_child(shape)
 			add_child(body)
+
+
+	# The edge of the map: an invisible wall all round, for maps whose
+	# outdoor floor runs right up to the edge.
+	for edge in [Rect2(-tile_px, -tile_px, size_px.x + tile_px * 2, tile_px), Rect2(-tile_px, size_px.y, size_px.x + tile_px * 2, tile_px),
+			Rect2(-tile_px, 0, tile_px, size_px.y), Rect2(size_px.x, 0, tile_px, size_px.y)]:
+		var border := StaticBody2D.new()
+		border.collision_layer = 1
+		border.collision_mask = 0
+		border.position = edge.get_center()
+		var border_shape := CollisionShape2D.new()
+		var border_rect := RectangleShape2D.new()
+		border_rect.size = edge.size
+		border_shape.shape = border_rect
+		border.add_child(border_shape)
+		add_child(border)
 
 
 ## Gang rugs and doormats, flat on the floor under the blood and furniture.
@@ -413,6 +466,20 @@ func _place_furniture() -> void:
 		if parts.size() == 3 and parts[0].begins_with("floor_") and FANCY_FLOORS.has(parts[0].trim_prefix("floor_")):
 			_room_floor[_room_of_tile.get(Vector2i(int(parts[1]), int(parts[2])), -1)] = parts[0].trim_prefix("floor_")
 			continue
+		if parts.size() >= 5 and parts.size() % 2 == 1 and parts[0] == "patrol":
+			var points: Array[Vector2] = []
+			for i in range(1, parts.size(), 2):
+				points.append(_tile_center(Vector2i(int(parts[i]), int(parts[i + 1]))))
+			_patrols[Vector2i(int(parts[1]), int(parts[2]))] = points
+			continue
+		if parts.size() == 4 and parts[0] == "face":
+			var compass := {"east": 0.0, "south": 90.0, "west": 180.0, "north": -90.0}
+			_facings[Vector2i(int(parts[1]), int(parts[2]))] = compass.get(parts[3], float(parts[3]))
+			continue
+		if parts.size() == 4 and parts[0] == "door_out" and DECOR_TURN.has(parts[3]):
+			var away := {"up": Vector2.UP, "down": Vector2.DOWN, "left": Vector2.LEFT, "right": Vector2.RIGHT}
+			_one_way_doors[Vector2i(int(parts[1]), int(parts[2]))] = away[parts[3]]
+			continue
 		if parts.size() == 5 and parts[0] == "stairs":
 			_stair_lines.append(PackedInt32Array([int(parts[1]), int(parts[2]), int(parts[3]), int(parts[4])]))
 			continue
@@ -462,6 +529,38 @@ func _place_furniture() -> void:
 			shape.shape = rectangle
 			body.add_child(shape)
 			add_child(body)
+
+
+## Picture levels: each furniture piece cut out of the drawing stands on the
+## floor (Y-sorted by its base, sort_y) and blocks with its collision box.
+func _place_picture_pieces() -> void:
+	if picture == null or picture_pieces == "":
+		return
+	var folder := picture_pieces.get_base_dir()
+	var data = load(picture_pieces).data
+	for entry in data.pieces:
+		var piece := Sprite2D.new()
+		piece.name = String(entry.name).to_pascal_case()
+		piece.texture = load("%s/pieces/%s.png" % [folder, entry.name])
+		piece.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		piece.centered = false
+		piece.position = Vector2(entry.x, entry.sort_y)
+		piece.offset = Vector2(0, entry.y - entry.sort_y)
+		piece.add_to_group("picture_pieces")
+		add_child(piece)
+		var box := Rect2(entry.collision[0], entry.collision[1], entry.collision[2], entry.collision[3])
+		_solid_rects.append(box)
+		var body := StaticBody2D.new()
+		body.collision_layer = 1
+		body.collision_mask = 0
+		body.add_to_group("nav_walls")
+		body.position = box.get_center()
+		var shape := CollisionShape2D.new()
+		var rectangle := RectangleShape2D.new()
+		rectangle.size = box.size
+		shape.shape = rectangle
+		body.add_child(shape)
+		add_child(body)
 
 
 ## A painting, sconce or similar on a wall: turned to face the room, drawn
@@ -561,10 +660,13 @@ func _build_doorways() -> void:
 			while tile(at + step * length) == "D":
 				seen[at + step * length] = true
 				length += 1
-			# 8 or more D's in a row (an even number) make a double door: two
+			# 6 or more D's in a row (an even number) make a double door: two
 			# halves hinged at the two ends, meeting in the middle.
-			var halves := 2 if length >= 8 and length % 2 == 0 else 1
+			var halves := 2 if length >= 6 and length % 2 == 0 else 1
 			var start := Vector2(at) * tile_px + Vector2(step.y, step.x) * tile_px * 0.5
+			var leaves: Array[Node2D] = []
+			for i in length:
+				_doors_by_tile[at + step * i] = leaves
 			for half in halves:
 				count += 1
 				var door: Node2D = DOOR_SCENE.instantiate()
@@ -573,7 +675,10 @@ func _build_doorways() -> void:
 				door.length = length * tile_px / halves
 				door.position = start + Vector2(step) * (length * tile_px * half)
 				door.rotation = (0.0 if step == Vector2i.RIGHT else PI * 0.5) + PI * half
+				if picture:
+					door.color = door_color
 				add_child(door)
+				leaves.append(door)
 
 
 func _spawn_things() -> void:
@@ -614,8 +719,11 @@ func _spawn_things() -> void:
 				# Every 1/roam_chance-th enemy (in map order) is a roamer.
 				var index: int = count["C"] + count["V"] + count["M"] + count["F"] + count["G"] + count["K"]
 				grunt.stays_in_room = floori(index * roam_chance) == floori((index - 1) * roam_chance)
-				grunt.start_facing_degrees = rad_to_deg(spot.angle_to_point(_room_center(at)))
-				if letter == "K" or rng.randf() < patrol_share:
+				grunt.start_facing_degrees = _facings.get(at, rad_to_deg(spot.angle_to_point(_room_center(at))))
+				if _patrols.has(at):
+					grunt.patrol_points = _patrols[at]
+					grunt.start_facing_degrees = _facings.get(at, rad_to_deg(spot.angle_to_point(_patrols[at][1])))
+				elif letter == "K" or rng.randf() < patrol_share:
 					grunt.patrol_points = _patrol_route(at, rng)
 				add_child(grunt)
 			"g":
@@ -711,7 +819,7 @@ func _build_navigation() -> void:
 	]))
 	nav_polygon.agent_radius = 8.0
 	nav_polygon.parsed_geometry_type = NavigationPolygon.PARSED_GEOMETRY_STATIC_COLLIDERS
-	nav_polygon.parsed_collision_mask = 1
+	nav_polygon.parsed_collision_mask = 1 | WATER_LAYER
 	nav_polygon.source_geometry_mode = NavigationPolygon.SOURCE_GEOMETRY_GROUPS_WITH_CHILDREN
 	nav_polygon.source_geometry_group_name = &"nav_walls"
 	var region := NavigationRegion2D.new()
@@ -726,6 +834,9 @@ func _build_navigation() -> void:
 ## Floor art comes in 16 px squares. With smaller tiles each map tile shows
 ## its own part of the square covering it, so the pattern stays seamless.
 func _draw_floor(canvas: Node2D) -> void:
+	if picture:
+		canvas.draw_texture(picture, Vector2.ZERO)
+		return
 	var per := maxi(16 / tile_px, 1)   # map tiles per art square, each way
 	for at in _floor_tiles:
 		var rect := Rect2(Vector2(at) * tile_px, Vector2.ONE * tile_px)
@@ -777,6 +888,12 @@ func _draw_floor(canvas: Node2D) -> void:
 
 
 func _draw_walls(canvas: Node2D) -> void:
+	if picture:
+		# The walls are in the picture already; draw those parts again on
+		# top so blood never paints over a wall or a painting.
+		for rect in _walls:
+			canvas.draw_texture_rect_region(picture, rect, rect)
+		return
 	if wall_style == WallStyle.PLASTER:
 		_draw_plaster_walls(canvas)
 	else:

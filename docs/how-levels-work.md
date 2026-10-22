@@ -16,6 +16,8 @@ so two letters).
 | `#` | wall |
 | `W` | window wall: glass with the city behind it (blocks like a wall) |
 | `S` | stairs (a block of S's is one end of a staircase) |
+| `x` | floor with furniture on it (picture levels: the piece itself blocks) |
+| `~` | pool water: you can't walk in it, but bullets fly over it |
 | `.` | floor |
 | `D` | swinging door. 4 in a row = one door. 8 in a row = a **double door** |
 | `o` | open doorway (an arch, no door) |
@@ -46,6 +48,20 @@ banner. Step off the stairs before you can take them back. Enemies stay on
 their own floor. Make the Gore node's area_size cover the whole map
 (width x height in pixels, both floors).
 
+### Levels built from a picture (level 1)
+
+Level 1 is Fianso's own drawing of the house. In the LevelMap node:
+
+* **Picture**: the whole floor drawn as one image (walls, floors, paintings).
+* **Picture pieces**: a JSON list of the furniture cut out of that drawing.
+  Each piece has its own image in `pieces/`, the spot where it stands
+  (`sort_y`, its base, for depth) and the box that blocks (`collision`).
+* **Layout** still says what blocks (`#`, `~`) and where people, weapons,
+  doors and stairs go. Walls are drawn again on top of the blood, so blood
+  never covers a wall or a painting.
+
+Files: `assets/levels/mansion/floor1/`.
+
 ## 2. The furniture list: one thing per line
 
 ```
@@ -59,6 +75,11 @@ painting_gold 54 30 up    a painting on the north wall, starting at tile 54, 30
   wood parquet). Rooms without one get plain wood.
 * **Furniture** pictures live in `assets/levels/furniture/`, one PNG each.
   The name in the list is the file name.
+* **Enemies:** `patrol 55 38 55 19` makes the enemy on tile 55,38 walk to
+  55,19 and back (more points = a loop). `face 12 21 west` sets which way an
+  enemy faces at the start.
+* **One-way doors:** `door_out 43 15 up` makes that door only swing up
+  (outward). 6 or more D's in a row make a double door.
 * **Wall decor** (paintings, sconces, clocks, wood panels) lives in
   `assets/levels/decor/`. The fourth word says which wall it hangs on:
   `up` = north wall, `down` = south, `left` = west, `right` = east. The game

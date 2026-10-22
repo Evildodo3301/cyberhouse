@@ -43,6 +43,8 @@ func _initialize() -> void:
 	level.next_level = ""
 	var map = level.get_node("LevelMap")
 	map.layout = LAYOUT
+	map.picture = null   # a plain drawn house, not level 1's picture
+	map.picture_pieces = ""
 	map.furniture = "stairs 10 3 10 12\nfloor_marble 3 2\nfloor_checker 3 12"
 	level.get_node("Gore").area_size = Vector2i(112, 128)
 	root.add_child(level)

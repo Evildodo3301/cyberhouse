@@ -32,6 +32,9 @@ extends Node2D
 ## The door only knocks people down while swinging at least this fast.
 @export var knockdown_speed_degrees: float = 500.0
 @export var color: Color = Color(0.95, 0.55, 0.15)   # neon orange
+## Set (with open_only_toward) for a door that only swings one way, e.g.
+## out onto a terrace because chairs stand right inside it.
+var one_way: float = 0.0
 
 ## Current angle in degrees (0 = closed, + or - = open to one side).
 var angle: float = 0.0
@@ -99,6 +102,12 @@ func _physics_process(delta: float) -> void:
 			var side := _side_of(pushers[0].global_position)
 			_target_angle = -side * open_angle_degrees
 			_open_speed = open_speed_degrees
+			if one_way != 0.0:
+				_target_angle = one_way * open_angle_degrees
+				if one_way == side:
+					# Pulled open toward whoever is pushing: gently, so it
+					# never slams them over.
+					_open_speed = close_speed_degrees
 			_already_hit.clear()
 			Game.door_opened.emit(self, pushers[0])
 
@@ -128,6 +137,11 @@ func _spring_shut(delta: float) -> float:
 		new_angle = 0.0   # settled
 		_spring_velocity = 0.0
 	return new_angle
+
+
+## Makes the door only ever swing out toward `direction` (in the room).
+func open_only_toward(direction: Vector2) -> void:
+	one_way = _side_of(global_position + direction.normalized() * 10.0)
 
 
 ## A bullet hit it: it swings a little way open, away from the shot, then

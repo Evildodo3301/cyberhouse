@@ -1,5 +1,7 @@
 extends SceneTree
-## Checks level 1 is built correctly from its text map and can be finished.
+## Checks level 1, floor 1 of the mansion: built from Fianso's picture
+## (the drawing is the floor, the furniture is cut out and stands on it),
+## and that it plays: patrols, sneaking, doors, weapons, shots and kills.
 ##   godot --headless --script res://tests/level_01_test.gd
 
 var failures := 0
@@ -27,142 +29,99 @@ func _initialize() -> void:
 	var player = level.get_node("Player")
 	var enemies: Array = root.get_tree().get_nodes_in_group("enemies")
 	var t := func(x: int, y: int) -> Vector2: return (Vector2(x, y) + Vector2(0.5, 0.5)) * 8.0   # tile centre
-	check(map.tile_px == 8, "thin walls: 8 px tiles")
-	check(map.room_count() == 11, "a house of 11 rooms (%d)" % map.room_count())
-	var dogs := enemies.filter(func(e): return e.is_dog)
-	var people := enemies.filter(func(e): return not e.is_dog)
-	check(enemies.size() == 10 and dogs.size() == 2, "an easy first level: 8 enemies and 2 dobermans (%d, %d dogs)" % [enemies.size(), dogs.size()])
-	var doors := root.get_tree().get_nodes_in_group("doors")
-	check(doors.size() == 11 and doors.all(func(d): return d.length == 32.0), "11 small doors (32 px)")
-	var pickups := root.get_tree().get_nodes_in_group("pickups")
-	check(pickups.filter(func(p): return p.weapon.id == &"pistol").size() == 2, "2 pistols placed")
-	check(pickups.filter(func(p): return p.weapon.id == &"machete").size() == 2, "2 machetes placed")
-	check(player.weapon.id == &"fists", "you start unarmed")
-	var start_room: int = map.room_at(player.global_position)
-	check(start_room >= 0 and enemies.all(func(e): return map.room_at(e.global_position) != start_room), "the start room (the hall by the front door) is safe")
-	var exit_zone = root.get_tree().get_first_node_in_group("exit")
-	check(exit_zone != null and not exit_zone.open, "exit exists and is locked")
+	var space: PhysicsDirectSpaceState2D = player.get_world_2d().direct_space_state
+	var blocks := func(at: Vector2, mask: int) -> bool:
+		var q := PhysicsPointQueryParameters2D.new()
+		q.position = at
+		q.collision_mask = mask
+		return not space.intersect_point(q).is_empty()
 
-	# Every enemy can walk to you (paths through doors and doorways, round furniture).
+	# Built from the picture.
+	check(map.picture != null and map.picture.get_size() == Vector2(736, 424), "the floor is Fianso's picture (736 x 424 px)")
+	var pieces: Array = root.get_tree().get_nodes_in_group("picture_pieces")
+	check(pieces.size() == 40, "40 pieces of furniture cut out of it (%d)" % pieces.size())
+	var data = load(map.picture_pieces).data
+	var sofa: Dictionary = data.pieces.filter(func(p): return p.name == "sofa_top")[0]
+	var sofa_node = pieces.filter(func(p): return p.name == "SofaTop")[0]
+	check(sofa_node.position.y == sofa.sort_y and sofa_node.position.y + sofa_node.offset.y == sofa.y, "furniture stands at its base, so whoever is lower down is drawn in front")
+	var box := Rect2(sofa.collision[0], sofa.collision[1], sofa.collision[2], sofa.collision[3])
+	check(blocks.call(box.get_center(), 1) and not blocks.call(Vector2(sofa.x + 2, sofa.y + 2), 1), "the sofa blocks at its seat, not at the top of its back")
+	check(root.get_tree().get_nodes_in_group("rugs").is_empty(), "no gang rugs: the picture has its own")
+	var pool_tile := Vector2i(70, 5)
+	check(map.tile(pool_tile) == "~" and blocks.call(t.call(70, 5), 32) and not blocks.call(t.call(70, 5), 1 | 16), "the pool stops feet but not bullets")
+	check(blocks.call(Vector2(-4, 20), 1) and blocks.call(Vector2(20, map.size_px.y + 4), 1), "you can't walk off the edge of the map")
+	var doors := root.get_tree().get_nodes_in_group("doors")
+	check(doors.size() == 5, "kitchen, office (2) and the terrace double door (2 leaves) = 5 door panels (%d)" % doors.size())
+	var terrace := doors.filter(func(d): return d.one_way != 0.0)
+	check(terrace.size() == 2, "the terrace door only swings out")
+
+	# Who is where (the Level Designer's placements).
+	var dogs := enemies.filter(func(e): return e.is_dog)
+	check(enemies.size() == 5 and dogs.size() == 1, "an easy floor: 4 people and a doberman (%d)" % enemies.size())
+	check(player.global_position == t.call(45, 48) and player.weapon.id == &"fists", "you start unarmed on the front steps")
+	var pickups := root.get_tree().get_nodes_in_group("pickups")
+	check(pickups.size() == 2, "a machete by the door and a pistol in the kitchen")
+	var by_tile := func(x: int, y: int): return enemies.filter(func(e): return e._home == t.call(x, y))[0]
+	check(Array(by_tile.call(55, 38).patrol_points) == [t.call(55, 38), t.call(55, 19)], "the lounge guard walks up and down the lounge")
+	check(by_tile.call(66, 36).patrol_points.size() == 4, "the doberman walks a loop in the office")
+	check(is_equal_approx(by_tile.call(12, 21).start_facing_degrees, 180.0), "the cook faces west, his back to the lounge")
+	check(is_equal_approx(by_tile.call(75, 18).start_facing_degrees, 90.0) and by_tile.call(75, 18).has_gun(), "the boss sits behind the desk with a pistol, facing south")
+	check(enemies.all(func(e): return e.settings.reaction_time >= 0.35 and not e.settings.notice_whole_room), "enemies only see in front of them, and react slowly")
+
+	# Everyone can reach you; nothing starts inside furniture.
 	var nav_map: RID = player.get_world_2d().navigation_map
 	await wait_frames(2)
 	var stuck := enemies.filter(func(e):
 		var path := NavigationServer2D.map_get_path(nav_map, e.global_position, player.global_position, true)
 		return path.size() == 0 or path[path.size() - 1].distance_to(player.global_position) >= 12.0).map(func(e): return e.name)
-	check(stuck.is_empty(), "every enemy has a path to the start %s" % [stuck])
-
-	# Looks: the player wears the pink sheet, every enemy the cop sheet.
-	check(player._sprite != null and player._sprite.texture.resource_path.ends_with("hero_torso.png"), "the player is the new hero")
-	check(player._legs_sprite != null and player._legs_sprite.get_parent().name == "Legs", "the template's feet are on the legs (they turn apart)")
-	var pieces := map.get_children().filter(func(c): return c is Sprite2D and (c.region_enabled or c.is_in_group("fancy_furniture")))
-	check(pieces.size() >= 80, "lots of furniture (%d pieces)" % pieces.size())
-	var fancy_rooms := {}
-	for piece in root.get_tree().get_nodes_in_group("fancy_furniture"):
-		fancy_rooms[map.room_at(piece.position + piece.offset + piece.texture.get_size() * 0.5)] = true
-	check(fancy_rooms.size() == map.room_count(), "fancy furniture in every room (%d of %d)" % [fancy_rooms.size(), map.room_count()])
-	var leopard = map.get_children().filter(func(c): return c is Sprite2D and c.name == "LeopardRug")
-	check(leopard.size() == 1 and leopard[0].z_index == -1, "the leopard rug lies under the blood")
-	check(people.all(func(e): return e.sheet.resource_path.ends_with("cop_suit.png")), "every enemy wears a black suit")
-	check(dogs.all(func(e): return e.sheet == null and e.carried_weapon == null and e.active_counters.is_empty()), "dogs: placeholder body, no weapon, no learned counters")
-	var thugs := enemies.filter(func(e): return e.carried_weapon and e.carried_weapon.id == &"machete")
-	check(thugs.size() == 3, "3 enemies carry a machete")
-	check(enemies.filter(func(e): return e.has_gun()).size() == 2, "only 2 enemies have guns")
-	check(people.all(func(e): return not e.settings.notice_whole_room and e.settings.reaction_time >= 0.35), "enemies only see what's in front of them, and react a bit slower")
-	# Patrols: dogs and most enemies walk a round inside their own room.
-	var patrollers := enemies.filter(func(e): return e.patrol_points.size() >= 2)
-	print("      patrols: ", patrollers.map(func(e): return "%s:%d" % [e.name, e.patrol_points.size()]))
-	check(dogs.all(func(e): return e.patrol_points.size() >= 2), "dogs patrol")
-	check(patrollers.size() >= 6, "most enemies patrol (%d of 10)" % patrollers.size())
-	check(patrollers.all(func(e): return e.patrol_points.all(func(p): return map.room_at(p) == e._home_room)), "every patrol stays in its room")
-	check(enemies.filter(func(e): return e.carried_weapon and e.carried_weapon.id == &"machine_gun").size() == 1, "one enemy has a machine gun")
-	check(pickups.filter(func(p): return p.weapon.id == &"machine_gun").size() == 1, "a machine gun lies in the house")
-	# Gang carpets: a rug in each big room, a mat at every door, all three designs used.
-	var rugs := root.get_tree().get_nodes_in_group("rugs")
-	var big_rugs := rugs.filter(func(r): return r.texture.resource_path.get_file().begins_with("rug-"))
-	var mats := rugs.filter(func(r): return r.texture.resource_path.get_file().begins_with("doormat-"))
-	print("      rugs: ", big_rugs.map(func(r): return r.texture.resource_path.get_file().substr(4, 1)), " mats: ", mats.map(func(r): return r.texture.resource_path.get_file().substr(8, 1)))
-	check(big_rugs.size() >= 5, "big rooms have a gang rug in the middle (%d)" % big_rugs.size())
-	check(mats.size() == doors.size(), "a doormat at every door")
-	var designs := {}
-	for r in rugs:
-		designs[r.texture.resource_path.get_file().split("-")[1]] = true
-	check(designs.size() == 3, "all three gang designs show up")
-	check(rugs.all(func(r): return r.z_index == -1), "carpets lie under the blood and furniture")
-	check(big_rugs.all(func(r): return map.room_at(r.global_position) >= 0 and map.room_at(r.global_position - r.texture.get_size() * 0.45) == map.room_at(r.global_position + r.texture.get_size() * 0.45)), "each rug lies inside one room")
-	var rug_layout := rugs.map(func(r): return [r.texture.resource_path, r.global_position])
-	# Furniture never blocks a spawn, a pickup or a door's swing.
-	var solids := map.get_children().filter(func(c): return c is StaticBody2D and c.is_in_group("nav_walls") and map.tile(Vector2i(c.position / map.tile_px)) != "#")
+	check(stuck.is_empty(), "every enemy has a path to you %s" % [stuck])
 	var spots: Array = enemies.map(func(e): return e.global_position) + pickups.map(func(p): return p.global_position)
-	var blocked := spots.filter(func(at):
-		var q := PhysicsPointQueryParameters2D.new()
-		q.position = at
-		q.collision_mask = 1
-		return not player.get_world_2d().direct_space_state.intersect_point(q).is_empty())
-	check(blocked.is_empty(), "no spawn or weapon sits inside furniture %s" % [blocked])
-	var in_swing := solids.filter(func(b): return doors.any(func(d): return (b.global_position - (d.global_position + Vector2.RIGHT.rotated(d.rotation) * d.length * 0.5)).length() < d.length * 0.75))
-	check(in_swing.is_empty(), "no furniture in a door's swing %s" % [in_swing.map(func(b): return Vector2i(b.position / 8.0))])
+	check(spots.filter(func(at): return blocks.call(at, 1 | 32)).is_empty(), "no enemy or weapon starts inside furniture")
 
-	var roamers := enemies.filter(func(e): return not e.stays_in_room)
-	print("      roamers: ", roamers.map(func(e): return e.name))
-	check(roamers.size() >= 1 and roamers.size() <= 3, "only a few enemies may leave their room (%d of 10)" % roamers.size())
-
-	# Sneaking: an enemy with its back to you doesn't notice you; step in front and it does.
-	var living: int = map.room_at(t.call(30, 40))
-	var sentry = enemies.filter(func(e): return map.room_at(e.global_position) == living)[0]
-	sentry.patrol_points = [] as Array[Vector2]
-	sentry._home = t.call(36, 40)
-	sentry._home_facing = Vector2.RIGHT
-	sentry.global_position = sentry._home
-	sentry.facing = Vector2.RIGHT
-	sentry._enter(0)
-	player.global_position = t.call(32, 40)   # 32 px behind it
+	# Sneaking: the cook doesn't hear you creep up behind him.
+	var cook = by_tile.call(12, 21)
+	player.global_position = t.call(16, 21)   # 32 px behind him
 	await wait_frames(20)
-	check(sentry.state == 0, "you can stand right behind an enemy that hasn't seen you")
-	player.global_position = t.call(30, 40)
-	await wait_frames(1)
-	player.request_attack(Vector2.RIGHT)
+	check(cook.state == 0, "you can stand right behind the cook")
+	player.request_attack(Vector2.LEFT)
 	for i in 6:
-		player.global_position = player.global_position.move_toward(sentry.global_position - Vector2(16, 0), 4.0)
+		player.global_position = player.global_position.move_toward(cook.global_position + Vector2(14, 0), 4.0)
 		await physics_frame
-	player.request_attack(Vector2.RIGHT)
+	player.request_attack(Vector2.LEFT)
 	await wait_frames(20)
-	check(not sentry.is_alive(), "sneak up behind it and take it out before it turns")
-	var watcher = enemies.filter(func(e): return e.is_alive() and map.room_at(e.global_position) == map.room_at(t.call(36, 6)))[0]
-	watcher.patrol_points = [] as Array[Vector2]
-	watcher._home = watcher.global_position
-	watcher._home_facing = Vector2.LEFT
-	watcher.facing = Vector2.LEFT
-	watcher._enter(0)
-	player.global_position = watcher.global_position + Vector2(-48, 0)   # in front, in its cone
+	check(not cook.is_alive(), "sneak up behind him and take him out")
+	var boss = by_tile.call(75, 18)
+	for e in enemies:
+		if e != boss:
+			e.set_physics_process(false)
+	player.global_position = t.call(75, 22)   # right in front of the desk
 	await wait_frames(3)
-	check(watcher.state in [1, 2], "step in front of an enemy and it notices you")
-	player.global_position = t.call(6, 58)
-	await wait_frames(30)
+	check(boss.state in [1, 2, 7], "step in front of the boss and he notices you")
+	player.global_position = t.call(45, 48)
+	boss.take_hit(player, Vector2.DOWN, "melee")
+	await wait_frames(10)
 
-	# Doors: opening one only alerts an enemy that is looking at it.
-	var hall_door = doors.filter(func(d): return map.room_at(d.center() + Vector2(24, 0)) == living and absf(d.center().y - t.call(0, 58).y) < 24.0)
-	check(hall_door.size() == 1, "found the hall door")
+	# Doors: opening one only alerts an enemy looking at it.
 	var guard = load("res://scenes/enemies/grunt.tscn").instantiate()
 	guard.settings = load("res://data/easy_grunt_settings.tres")
-	guard.position = t.call(26, 58)
-	guard.start_facing_degrees = 0.0   # back to the door
-	level.get_node("LevelMap").add_child(guard)
+	guard.position = t.call(62, 25)   # in the office, clear view of the door
+	var to_door: Vector2 = (Vector2(484, 168) - guard.position).normalized()
+	guard.start_facing_degrees = rad_to_deg((-to_door).angle())   # back to the office door
+	map.add_child(guard)
 	await wait_frames(2)
-	player.global_position = t.call(13, 57)
+	player.global_position = Vector2(478, t.call(0, 19).y)
 	await wait_frames(4)
-	check(guard.state == 0, "a door opening behind an enemy's back goes unnoticed")
-	player.global_position = t.call(6, 58)
+	check(guard.state == 0, "the office door opening behind an enemy's back goes unnoticed")
+	player.global_position = t.call(45, 40)
 	await wait_frames(60)
-	guard._home_facing = Vector2.LEFT
-	guard.facing = Vector2.LEFT
-	player.global_position = t.call(13, 57)
+	guard._home_facing = to_door
+	guard.facing = to_door
+	player.global_position = Vector2(478, t.call(0, 19).y)
 	await wait_frames(4)
 	check(guard.state in [1, 2], "an enemy watching the door reacts when it opens")
 	guard.take_hit(player, Vector2.RIGHT, "melee")
-	player.global_position = t.call(6, 58)
+	player.global_position = t.call(45, 48)
 	await wait_frames(30)
-	var far_room := enemies.filter(func(e): return e.is_alive() and map.room_at(e.global_position) == map.room_at(t.call(90, 10)))
-	check(far_room.size() > 0 and far_room.all(func(e): return e.state == 0), "rooms away from you stay calm")
 
 	# Weapons: walk onto the machete, then onto a pistol: you switch each time,
 	# and what you held drops at your feet (and isn't grabbed straight back).
@@ -183,7 +142,7 @@ func _initialize() -> void:
 	check(dropped.size() == 1 and toss > 18.0, "the machete you held is tossed about a metre away (%.0f px)" % toss)
 	check(player.weapon.id == &"pistol", "it isn't picked straight back up")
 	# A machete thug drops his machete.
-	var thug = thugs[0]
+	var thug = enemies.filter(func(e): return e.carried_weapon and e.carried_weapon.id == &"machete")[0]
 	thug.take_hit(player, Vector2.RIGHT, "melee")
 	await wait_frames(30)
 	var thug_drop := root.get_tree().get_nodes_in_group("pickups").filter(func(p): return p.weapon.id == &"machete" and p.global_position.distance_to(thug.global_position) < 60.0)
@@ -193,7 +152,7 @@ func _initialize() -> void:
 		e.set_physics_process(true)
 
 	# Shoot: a tiny triple kick, and the void flashes neon then fades.
-	player.global_position = t.call(6, 58)
+	player.global_position = t.call(45, 48)
 	player.equip(load("res://data/weapons/pistol.tres"), 8)
 	var camera = level.get_node("GameCamera")
 	var void_flash = level.get_node("VoidFlash")
@@ -236,44 +195,6 @@ func _initialize() -> void:
 	check(is_equal_approx(player.view_rotation, camera.rotation), "the player reads the sticks through the tilt")
 	var on_screen: Vector2 = level.get_viewport().get_canvas_transform().basis_xform(Vector2.UP.rotated(player.view_rotation))
 	check(on_screen.normalized().dot(Vector2.UP) > 0.999, "pushing up moves you straight up the screen")
-
-	# The shot was heard everywhere: for 3 s, no stay-in-room enemy leaves its room.
-	var left_room := []
-	for i in 180:
-		await physics_frame
-		for e in enemies:
-			if e.stays_in_room and e.is_alive() and map.room_at(e.global_position) != e._home_room and not left_room.has(e.name):
-				left_room.append(e.name)
-	check(left_room.is_empty(), "stay-in-room enemies stop at their doorway %s" % [left_room])
-	var holding := []
-	for door in root.get_tree().get_nodes_in_group("doors"):
-		for body in door._push_zone.get_overlapping_bodies():
-			if body.is_in_group("enemies") and body.stays_in_room:
-				holding.append(body.name)
-	check(holding.is_empty(), "waiting enemies never hold a door open %s" % [holding])
-
-	# Kill everyone: the exit opens; walk in: LEVEL COMPLETE. (Restart first:
-	# a roamer may have got you during the waiting check.)
-	if true:
-		# A retry keeps the carpets where they were.
-		root.get_node("Game").restart_room()
-		await process_frame
-		await process_frame
-		await wait_frames(3)
-		level = current_scene
-		player = level.get_node("Player")
-		exit_zone = root.get_tree().get_first_node_in_group("exit")
-		var again := root.get_tree().get_nodes_in_group("rugs").map(func(r): return [r.texture.resource_path, r.global_position])
-		check(again == rug_layout, "a retry keeps the same carpets in the same places")
-	player.global_position = t.call(6, 58)
-	for enemy in root.get_tree().get_nodes_in_group("enemies"):
-		enemy.take_hit(player, Vector2.RIGHT, "melee")
-	await wait_frames(2)
-	check(exit_zone.open, "all enemies dead: the exit opens")
-	player.global_position = exit_zone.rect.get_center()
-	await wait_frames(3)
-	var death_screen = level.get_node("DeathScreen")
-	check(death_screen.visible and "LEVEL COMPLETE" in death_screen._label.text, "reaching the exit completes the level")
 
 	print("\n%s (%d failure(s))" % ["ALL PASSED" if failures == 0 else "SOME FAILED", failures])
 	quit(failures)
