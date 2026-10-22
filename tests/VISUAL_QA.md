@@ -16,7 +16,7 @@ ways, with the real HD frames, on level 1 (both floors) and level 2.
 | Check | Rule | Result |
 |---|---|---|
 | Hidden under furniture | Furniture is never drawn over a player or an enemy | FAIL |
-| Drawn over furniture | A player or an enemy is never drawn over furniture art | FAIL |
+| Drawn over furniture | A player or an enemy is never drawn over furniture art | WARN: look at the pictures (cut-out pieces carry a little floor at their edges) |
 | Dogs | Dogs may go under tables (they are shorter) | listed only |
 | Real-life sizes | Furniture, doors and the dog vs a person, using the size table in the test (`SIZES`) | FAIL if more than 30% off, WARN if 15-30% |
 | Reachable | Every enemy and weapon can be walked up to; areas nobody can enter are listed | FAIL / WARN |
