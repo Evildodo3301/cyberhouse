@@ -28,6 +28,7 @@ const SIZES := {
 	"plant": [0.3, 1.0, 0.3, 1.0],   # before "bed": plant_bedroom_l is a plant
 	"statue": [0.4, 1.2, 0.4, 1.2],
 	"lamp": [0.3, 0.8, 0.3, 0.8],
+	"dog_bed": [0.6, 1.2, 0.5, 1.0],   # before "bed"
 	"billiard": [2.4, 3.0, 1.3, 1.7],
 	"dining_set": [1.8, 3.4, 1.0, 2.2],
 	"dining_table": [1.6, 2.6, 0.8, 1.2],
@@ -50,7 +51,6 @@ const SIZES := {
 	"fridge": [0.6, 0.95, 0.6, 0.95],
 	"cabinet": [0.6, 1.6, 0.4, 0.7],
 	"globe": [0.4, 0.9, 0.4, 0.9],
-	"dog_bed": [0.6, 1.2, 0.5, 1.0],
 }
 ## A doberman nose to tail, and across its back (metres).
 const DOG_LENGTH_M := [0.9, 1.3]
