@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://b8topa3nhkyw6"
-path="res://.godot/imported/dog_bite_11f.png-3012a6d28157667a51aa31a571502a97.ctex"
+uid="uid://cbjlvgi1wnanl"
+path="res://.godot/imported/hero_death2_23f.png-98b528318a875399de3f3ff20aa82ee9.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/characters/pixel/dog_bite_11f.png"
-dest_files=["res://.godot/imported/dog_bite_11f.png-3012a6d28157667a51aa31a571502a97.ctex"]
+source_file="res://assets/characters/pixel/hero_death2_23f.png"
+dest_files=["res://.godot/imported/hero_death2_23f.png-98b528318a875399de3f3ff20aa82ee9.ctex"]
 
 [params]
 

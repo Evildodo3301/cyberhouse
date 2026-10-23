@@ -36,6 +36,7 @@ const SPURT_STEPS := 8
 var gore: GoreLayer
 var at: Vector2               # where the body lies (gore layer coordinates)
 var direction: Vector2        # head points this way
+var hit_direction: Vector2    # the way the killing blow went (the spurt goes this way)
 var body_color: Color
 var corpse: Dictionary        # see GoreLayer.add_kill
 var gory: bool                # use the burst-head corpse frame
@@ -58,7 +59,8 @@ func _ready() -> void:
 	for i in 12:
 		_pool_shape.append(randf_range(0.65, 1.0))
 	if is_pixel():
-		_spurt_angle = direction.angle() + randf_range(-0.6, 0.6)   # the Art Director's jet: away from the shooter
+		var hit := hit_direction if hit_direction != Vector2.ZERO else direction
+		_spurt_angle = hit.angle() + randf_range(-0.6, 0.6)   # the Art Director's jet: away from the shooter
 	else:
 		_spurt_angle = direction.angle() + PI + randf_range(-0.9, 0.9)   # out of the wound, back the way the hit came
 	_pool_turn = PI * 0.5 * randi_range(0, 3)
@@ -207,10 +209,10 @@ func _draw_pixel() -> void:
 	var pool := pool_frame()
 	if pool >= 0:
 		HdBody.draw_frame(self, "blood_pool", pool, pool_center(), _pool_turn, pool_size())
-	var who: String = corpse.pixel
-	var death := HdBody.info_of(who + "_death")
+	var death_name: String = corpse.pixel + "_death" + corpse.get("variant", "")
+	var death := HdBody.info_of(death_name)
 	var index := mini(int(_time * float(death.get("fps", 12))), int(death.get("frames", 1)) - 1)
-	HdBody.draw_frame(self, who + "_death", index, at, direction.angle() + PI * 0.5, float(corpse.get("size", 1.0)))
+	HdBody.draw_frame(self, death_name, index, at, direction.angle() + PI * 0.5, float(corpse.get("size", 1.0)))
 	if blood_level == Game.BloodLevel.FULL and _time < SPURT_TIME:
 		var step := int(_time * float(HdBody.info_of("blood_spurt").get("fps", 12))) % SPURT_STEPS
 		if step < 6:

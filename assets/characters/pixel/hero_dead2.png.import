@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://2tip3xsec05y"
-path="res://.godot/imported/hero_foot.png-687065c676b7b34bd3b524b34d092c34.ctex"
+uid="uid://du02egrj8y3vn"
+path="res://.godot/imported/hero_dead2.png-41ca17678edc18644844203f6ae578bb.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/characters/pixel/hero_foot.png"
-dest_files=["res://.godot/imported/hero_foot.png-687065c676b7b34bd3b524b34d092c34.ctex"]
+source_file="res://assets/characters/pixel/hero_dead2.png"
+dest_files=["res://.godot/imported/hero_dead2.png-41ca17678edc18644844203f6ae578bb.ctex"]
 
 [params]
 

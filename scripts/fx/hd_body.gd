@@ -35,9 +35,16 @@ const IMPLANT_CODE := preload("res://shaders/implant_code.gdshader")
 static var _anims: Dictionary = {}
 static var _textures: Dictionary = {}
 
+## A soft contact shadow under everyone, so they sit on the floor (the Art
+## Director's room blend): the same picture, dark and see-through, a little
+## right of and below the body, in room px whichever way it faces.
+const SHADOW_COLOR := Color(8 / 255.0, 3 / 255.0, 2 / 255.0, 0.43)
+const SHADOW_OFFSET := Vector2(1.0, 1.5)
+
 ## "hero", "enemy" or "dog": the start of every animation's name.
 var who: String = "hero"
 var current: String = ""
+var _shadow: Sprite2D
 
 
 ## `outline`: a coloured outline (the hero's teal). `code`: the enemy's
@@ -57,6 +64,12 @@ func setup(character: String, outline := Color.TRANSPARENT, code := false) -> vo
 		material.set_shader_parameter("glyphs", preload("res://assets/characters/hd/implant_glyphs.png"))
 	if material.shader:
 		self.material = material
+	_shadow = Sprite2D.new()
+	_shadow.name = "Shadow"
+	_shadow.show_behind_parent = true
+	_shadow.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_shadow.modulate = SHADOW_COLOR
+	add_child(_shadow)
 	show_anim("idle", 0)
 
 
@@ -103,6 +116,18 @@ func show_anim(anim: String, index: int) -> void:
 		if material is ShaderMaterial and material.shader == IMPLANT_CODE:
 			material.set_shader_parameter("game_scale", 1.0)   # glyphs in sprite pixels: as crisp as the pixel art
 	frame = clampi(index, 0, hframes - 1)
+	_update_shadow()
+
+
+func _update_shadow() -> void:
+	if _shadow == null:
+		return
+	_shadow.texture = texture
+	_shadow.hframes = hframes
+	_shadow.frame = frame
+	_shadow.offset = offset
+	_shadow.centered = centered
+	_shadow.position = (SHADOW_OFFSET / scale).rotated(-rotation)
 
 
 ## The blade in the frame showing now (a machete swipe), as two points in
@@ -129,6 +154,7 @@ static func held_blade_points(weapon: WeaponData, transform: Transform2D, rect: 
 ## body turns with the picture.
 func face(direction: Vector2) -> void:
 	rotation = direction.angle() - PI * 0.5
+	_update_shadow()
 	var body := _body_shape()
 	if body:
 		body.rotation = rotation
@@ -166,6 +192,16 @@ static func info_of(full_name: String) -> Dictionary:
 	if _anims.is_empty():
 		_anims = load(ANIMS_FILE).data.anims   # imported as a JSON resource, so it ships in the APK
 	return _anims.get(full_name, {})
+
+
+## Which of the character's deaths to play ("" = the first, "2" to "4" =
+## the Art Director's extras), at random among those it has.
+static func death_variant(character: String) -> String:
+	var variants := [""]
+	for n in ["2", "3", "4"]:
+		if not info_of(character + "_death" + n).is_empty():
+			variants.append(n)
+	return variants.pick_random()
 
 
 ## Draws one frame of an animation onto `canvas` (the gore layer paints
