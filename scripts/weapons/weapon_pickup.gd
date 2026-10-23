@@ -104,11 +104,11 @@ func floor_scale() -> float:
 	return weapon.art_scale if weapon else 1.0
 
 
-## Half the length of its picture on the floor, in room px.
+## Half the diagonal of its picture on the floor, in room px: lying at any
+## angle, no part of it reaches further from its middle.
 func _half_length() -> float:
 	if weapon and weapon.floor_texture:
-		var size := weapon.floor_size()
-		return maxf(size.x, size.y) * 0.5
+		return weapon.floor_size().length() * 0.5
 	return 9.0
 
 

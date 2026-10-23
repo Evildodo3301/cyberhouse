@@ -40,10 +40,10 @@ func _initialize() -> void:
 	await wait_frames(3)
 	var player = current_scene.get_node("Player")
 	var exit_zone = root.get_tree().get_first_node_in_group("exit")
-	player.global_position = t.call(17, 42)
+	player.global_position = t.call(19, 46)
 	await wait_frames(5)
 	check(current_scene.name == "Level01", "the stairs stay shut while anyone on floor 1 is alive")
-	player.global_position = t.call(45, 48)
+	player.global_position = t.call(49, 52)
 	kill_everyone()
 	await wait_frames(5)
 	var alive: Array = root.get_tree().get_nodes_in_group("enemies").filter(func(e): return e.is_alive())
@@ -52,7 +52,7 @@ func _initialize() -> void:
 	check(score > 0, "kills scored (%d)" % score)
 
 	player.equip(load("res://data/weapons/machete.tres"), -1)
-	player.global_position = t.call(20, 42)
+	player.global_position = t.call(22, 46)
 	await wait_frames(3)
 	check(player.auto_walk == Vector2.LEFT, "on the stairs you walk up them on your own")
 	var start: Vector2 = player.global_position
@@ -71,7 +71,7 @@ func _initialize() -> void:
 	check(current_scene.name == "Level01Floor2", "and you arrive on floor 2, its own map")
 	check(game.get_node_or_null("LoadingScreen") == null, "the loading screen fades away")
 	player = current_scene.get_node("Player")
-	check(player.global_position == t.call(25, 41) and player.auto_walk == Vector2.ZERO, "at the top of the stairs, back in control")
+	check(player.global_position == t.call(27, 45) and player.auto_walk == Vector2.ZERO, "at the top of the stairs, back in control")
 	check(current_scene.get_node("ScoreBoard").score == score, "with the score you had on floor 1")
 	check(player.weapon.id == &"machete", "and the weapon you were holding")
 
@@ -82,11 +82,11 @@ func _initialize() -> void:
 	check(map.picture != null and root.get_tree().get_nodes_in_group("picture_pieces").size() == 46, "floor 2 is Fianso's picture with its 46 furniture pieces")
 	var space: PhysicsDirectSpaceState2D = player.get_world_2d().direct_space_state
 	var q := PhysicsPointQueryParameters2D.new()
-	q.position = t.call(18, 23)   # the bed in the left bedroom
+	q.position = t.call(20, 23)   # the bed in the left bedroom
 	q.collision_mask = 1
 	check(not space.intersect_point(q).is_empty(), "the furniture blocks")
-	var door_row := range(21, 27).map(func(x): return map.tile(Vector2i(x, 35)))
-	var passage := range(29, 35).all(func(y): return range(21, 27).all(func(x): return map.tile(Vector2i(x, y)) == "."))
+	var door_row := range(23, 29).map(func(x): return map.tile(Vector2i(x, 39)))
+	var passage := range(29, 39).all(func(y): return range(23, 29).all(func(x): return map.tile(Vector2i(x, y)) == "."))
 	check(door_row.all(func(c): return c == "D") and passage, "the foyer's painted double door is a real door, with a way through to the hall")
 	var nav_map: RID = player.get_world_2d().navigation_map
 	await wait_frames(2)
@@ -117,7 +117,7 @@ func _initialize() -> void:
 	await wait_frames(5)
 	player = current_scene.get_node("Player")
 	var total: int = current_scene.get_node("ScoreBoard").score
-	player.global_position = t.call(20, 42)
+	player.global_position = t.call(22, 46)
 	await wait_seconds(1.3)
 	var death_screen = current_scene.get_node("DeathScreen")
 	check(death_screen.visible and death_screen.next_scene == "res://scenes/levels/level_02.tscn", "down the stairs: level complete")
