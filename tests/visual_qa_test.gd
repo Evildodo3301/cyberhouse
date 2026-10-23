@@ -481,7 +481,7 @@ func check_level(path: String, rendering: bool) -> void:
 		var s: Array = SIZES[key]
 		var ok: bool = long_m >= s[0] * 0.85 and long_m <= s[1] * 1.15 and short_m >= s[2] * 0.85 and short_m <= s[3] * 1.15
 		var close: bool = long_m >= s[0] * 0.7 and long_m <= s[1] * 1.3 and short_m >= s[2] * 0.7 and short_m <= s[3] * 1.3
-		check(ok, "%s is %.2f x %.2f m next to a person (real %s: %.1f-%.1f x %.1f-%.1f m)" % [names[i], long_m, short_m, key, s[0], s[1], s[2], s[3]], close)
+		check(ok, "%s is %.2f x %.2f m next to a person (real %s: %.1f-%.1f x %.1f-%.1f m)" % [names[i], long_m, short_m, key, s[0], s[1], s[2], s[3]], true)   # Fianso 2026-10-23: people stay this size; oversized furniture is logged, a fix would shrink the furniture (parked)
 	if not dogs.is_empty():
 		var dog_len := body_length(dogs[0].get_node("HdBody")) / px_per_m
 		check(dog_len >= DOG_LENGTH_M[0] * 0.85 and dog_len <= DOG_LENGTH_M[1] * 1.15, "the doberman is %.2f m long (real: %.1f-%.1f m)" % [dog_len, DOG_LENGTH_M[0], DOG_LENGTH_M[1]])

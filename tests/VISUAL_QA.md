@@ -18,7 +18,7 @@ ways, with the real HD frames, on level 1 (both floors) and level 2.
 | Hidden under furniture | Furniture is never drawn over a player or an enemy | FAIL |
 | Drawn over furniture | A player or an enemy is never drawn over furniture art | WARN: look at the pictures (cut-out pieces carry a little floor at their edges) |
 | Dogs | Dogs may go under tables (they are shorter) | listed only |
-| Real-life sizes | Furniture, doors and the dog vs a person, using the size table in the test (`SIZES`) | FAIL if more than 30% off, WARN if 15-30% |
+| Real-life sizes | Furniture, doors and the dog vs a person, using the size table in the test (`SIZES`) | WARN (Fianso keeps the people this size; fixing would mean shrinking furniture, parked) |
 | Reachable | Every enemy and weapon can be walked up to; areas nobody can enter are listed | FAIL / WARN |
 | Animations | Walk frames don't jump (sliding, jitter); every animation is the same size as walking | WARN |
 | Walls | No person or dog drawn into a wall walking; an attack tucked behind a wall is a WARN, a blade showing on the far side FAILs | FAIL / WARN |
