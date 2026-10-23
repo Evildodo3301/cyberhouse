@@ -22,8 +22,9 @@ extends Node2D
 
 ## Size of the floor area that can hold gore (match the level size).
 @export var area_size: Vector2i = Vector2i(480, 320)
-@export var blood_color: Color = Color(0.6, 0.02, 0.08)
-@export var dark_blood_color: Color = Color(0.32, 0.0, 0.04)
+## Two of the Art Director's six blood reds, so drawn drops match the sheets.
+@export var blood_color: Color = Color("#a3141f")
+@export var dark_blood_color: Color = Color("#4a070d")
 
 ## How many kills have been painted (used by the test).
 var kill_count: int = 0
@@ -257,7 +258,7 @@ func _paint_spray(at: Vector2, direction: Vector2, explosive: bool) -> void:
 
 ## Blood is pixel art like the Art Director's pools and splats: drops and
 ## streaks are made of BLOOD_PIXEL squares, never smooth circles.
-const BLOOD_PIXEL := 0.5
+const BLOOD_PIXEL := 1.0 / 3.0
 
 
 func _pixel_dot(center: Vector2, radius: float, color: Color) -> void:
@@ -289,7 +290,7 @@ func _paint_footprint(stamp: Dictionary) -> void:
 	color.a = stamp.alpha
 	var kind: String = stamp.kind_of_foot
 	var texture: Texture2D = FOOTPRINTS.get(kind, FOOTPRINTS.hero)
-	var size := 0.5   # the Art Director's rule: a shoe print is about 0.27 m
+	var size := 1.0 / 3.0   # the Art Director's 1/3 rule: a shoe print is 24 px = 0.27 m
 	var flip := 1.0 if stamp.left or kind == "dog" else -1.0
 	_painter.draw_set_transform(stamp.at, stamp.angle - PI * 0.5, Vector2(size * flip, size))
 	_painter.draw_texture(texture, -texture.get_size() / 2.0, color)
