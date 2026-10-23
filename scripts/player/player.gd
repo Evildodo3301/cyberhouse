@@ -245,7 +245,9 @@ func _update_movement(delta: float) -> void:
 	if velocity.length() >= _recent_speed or _recent_speed_age > RECENT_SPEED_WINDOW:
 		_recent_speed = velocity.length()
 		_recent_speed_age = 0.0
+	var was_at := global_position
 	move_and_slide()   # moves the body and stops it at walls
+	_feet.update(self, global_position, global_position - was_at)
 
 
 # ------------------------------------------------------------------ aiming
@@ -819,6 +821,9 @@ func request_bomb(direction: Vector2) -> void:
 
 
 # ------------------------------------------------------------------- death
+
+var _feet := BloodyFeet.new()
+
 
 func is_alive() -> bool:
 	return _alive

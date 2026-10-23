@@ -206,7 +206,12 @@ func is_alive() -> bool:
 	return state != State.DEAD
 
 
+var _feet: BloodyFeet
+
+
 func _physics_process(delta: float) -> void:
+	if _feet == null:
+		_feet = BloodyFeet.new(is_dog)
 	if state == State.DEAD:
 		return
 	_state_time += delta
@@ -227,7 +232,9 @@ func _physics_process(delta: float) -> void:
 
 	if _flee_time > 0.0 and state != State.KNOCKED_DOWN:
 		_scatter(delta)
+		var fled_from := global_position
 		move_and_slide()
+		_feet.update(self, global_position, global_position - fled_from)
 		_update_sprite(delta)
 		queue_redraw()
 		_overlay.queue_redraw()
@@ -272,7 +279,10 @@ func _physics_process(delta: float) -> void:
 			velocity = velocity.move_toward(Vector2.ZERO, 400.0 * delta)
 			if _state_time >= settings.knockdown_time and not pinned:
 				_enter(State.CHASE if sees else State.SEARCH)
+	var was_at := global_position
 	move_and_slide()
+	if state != State.KNOCKED_DOWN:   # sliding on your back leaves no prints
+		_feet.update(self, global_position, global_position - was_at)
 	_update_sprite(delta)
 	queue_redraw()
 	_overlay.queue_redraw()

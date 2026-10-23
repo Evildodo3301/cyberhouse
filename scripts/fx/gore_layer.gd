@@ -25,10 +25,17 @@ extends Node2D
 
 ## How many kills have been painted (used by the test).
 var kill_count: int = 0
+## How many footprints have been painted, and how dark the last one was (test).
+var footprint_count: int = 0
+var last_footprint_alpha: float = 0.0
 
 var _viewport: SubViewport   # an off-screen canvas we paint into
 var _painter: Node2D         # draws the new stamps into that canvas
 var _pending: Array[Dictionary] = []
+## Where blood lies on the floor, for bloody footprints (BloodyFeet): the
+## WET_CELL px squares that a pool, a splat or a big drop covers.
+const WET_CELL := 4
+var _wet: Dictionary = {}   # Vector2i -> true
 
 
 func _ready() -> void:
@@ -110,6 +117,39 @@ func finish_kill(dying: DyingBody) -> void:
 	})
 
 
+## A bloody footprint (from BloodyFeet): `alpha` 0..1 fades it out.
+func add_footprint(at: Vector2, angle: float, alpha: float, paw: bool, left: bool) -> void:
+	if alpha <= 0.02:
+		return
+	footprint_count += 1
+	last_footprint_alpha = alpha
+	_queue({"kind": "foot", "at": to_local(at), "angle": angle, "alpha": alpha, "paw": paw, "left": left})
+
+
+## True if there's blood on the floor at `at` (someone stepping here gets
+## bloody soles): painted blood, or a pool still spreading under a body.
+func is_bloody(at: Vector2) -> bool:
+	var local := to_local(at)
+	if _wet.has(Vector2i((local / WET_CELL).floor())):
+		return true
+	for child in get_children():
+		if child is DyingBody:
+			var middle: Vector2 = child.at + child.direction * 4.0
+			if local.distance_to(middle) < child.pool_radius() * 0.65:
+				return true
+	return false
+
+
+func _mark_wet(center: Vector2, radius: float) -> void:
+	var lo := Vector2i(((center - Vector2.ONE * radius) / WET_CELL).floor())
+	var hi := Vector2i(((center + Vector2.ONE * radius) / WET_CELL).floor())
+	for y in range(lo.y, hi.y + 1):
+		for x in range(lo.x, hi.x + 1):
+			var cell_center := (Vector2(x, y) + Vector2(0.5, 0.5)) * WET_CELL
+			if cell_center.distance_to(center) <= radius:
+				_wet[Vector2i(x, y)] = true
+
+
 func _queue(stamp: Dictionary) -> void:
 	_pending.append(stamp)
 	_painter.queue_redraw()
@@ -132,15 +172,28 @@ func _paint_pending() -> void:
 					_paint_spray(stamp.at, stamp.direction, stamp.explosive)
 			"torn":
 				_painter.draw_colored_polygon(_blob(stamp.at, 7.0, 11.0), dark_blood_color)
+				_mark_wet(stamp.at, 8.0)
 				_paint_spray(stamp.at, stamp.direction, true)
 				draw_body(_painter, stamp.at, stamp.direction, stamp.body_color, {"torn": true}, true)
 			"stains":
 				for drop in stamp.drops:
 					_painter.draw_circle(drop[0], drop[1], blood_color if randf() < 0.7 else dark_blood_color)
+					if drop[1] >= 1.5:
+						_mark_wet(drop[0], drop[1])
 			"body":
 				if stamp.pool.size() > 2:
 					_painter.draw_colored_polygon(stamp.pool, dark_blood_color)
+					var middle := Vector2.ZERO
+					for point in stamp.pool:
+						middle += point
+					middle /= stamp.pool.size()
+					var reach := 0.0
+					for point in stamp.pool:
+						reach += point.distance_to(middle)
+					_mark_wet(middle, reach / stamp.pool.size() * 0.8)
 				draw_body(_painter, stamp.at, stamp.direction, stamp.body_color, stamp.corpse, stamp.gory)
+			"foot":
+				_paint_footprint(stamp)
 
 
 ## Streaks and spray thrown in the hit direction (the pool comes later).
@@ -156,13 +209,38 @@ func _paint_spray(at: Vector2, direction: Vector2, explosive: bool) -> void:
 		var end := at + Vector2.from_angle(angle) * length
 		_painter.draw_line(at, end, blood_color, randf_range(1.5, 3.0))
 		_painter.draw_circle(end, randf_range(1.5, 2.5), blood_color)
+		_mark_wet(end, 1.5)
 
 	# Spray: lots of small drops, denser close to the body.
 	for i in drops:
 		var angle := direction.angle() + randf_range(-spread, spread)
 		var distance := pow(randf(), 1.6) * reach + 3.0
 		var color := blood_color if randf() < 0.75 else dark_blood_color
-		_painter.draw_circle(at + Vector2.from_angle(angle) * distance, randf_range(0.6, 2.4), color)
+		var size := randf_range(0.6, 2.4)
+		_painter.draw_circle(at + Vector2.from_angle(angle) * distance, size, color)
+		if size >= 1.8:
+			_mark_wet(at + Vector2.from_angle(angle) * distance, size)
+
+
+## One footprint: a shoe (sole + heel, about 0.27 m long) or a paw (pad and
+## four toes), pointing the way the walker went.
+func _paint_footprint(stamp: Dictionary) -> void:
+	var color := dark_blood_color
+	color.a = stamp.alpha
+	_painter.draw_set_transform(stamp.at, stamp.angle, Vector2.ONE)
+	if stamp.paw:
+		_painter.draw_circle(Vector2(-0.5, 0.0), 1.1, color)
+		for toe in [Vector2(1.3, -1.2), Vector2(1.8, -0.4), Vector2(1.8, 0.4), Vector2(1.3, 1.2)]:
+			_painter.draw_circle(toe, 0.45, color)
+	else:
+		var flip := -1.0 if stamp.left else 1.0   # the big toe on the inside
+		_painter.draw_colored_polygon(PackedVector2Array([
+			Vector2(0.0, -1.3), Vector2(2.2, -1.5 + 0.2 * flip), Vector2(3.6, -0.8), Vector2(4.0, 0.0),
+			Vector2(3.6, 0.9), Vector2(2.2, 1.5 + 0.2 * flip), Vector2(0.0, 1.2)]), color)
+		_painter.draw_colored_polygon(PackedVector2Array([
+			Vector2(-1.2, -1.1), Vector2(-0.4, -1.2), Vector2(-0.4, 1.1), Vector2(-1.2, 1.0),
+			Vector2(-3.4, 1.0), Vector2(-4.0, 0.0), Vector2(-3.4, -1.0)]), color)
+	_painter.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
 ## Draws a body lying on the floor onto `canvas` (the gore image, or a
