@@ -46,6 +46,8 @@ var _wet: Dictionary = {}   # Vector2i -> true
 
 func _ready() -> void:
 	add_to_group("gore")
+	_build_blocked.call_deferred()   # at the start, not on the first kill (it takes a moment)
+	_warm_poses.call_deferred()
 	_viewport = SubViewport.new()
 	_viewport.size = area_size * DETAIL
 	_viewport.transparent_bg = true
@@ -117,16 +119,19 @@ func add_kill(at: Vector2, direction: Vector2, body_color: Color, weapon: String
 ## What a lying body may never be drawn over (Fianso): walls and the strip
 ## along them, and furniture (its whole drawn shape, tables included).
 const CORPSE_BLOCKERS := 1 | 128 | 64 | 256
-## Turns tried away from the hit direction, and how far the body may slide.
+## Turns tried away from the hit direction, and how far the body may slide
+## (in a crowded corner it may have to slide out from between the furniture).
 const FIT_TURNS := [0.0, 0.5, -0.5, 1.0, -1.0, 1.6, -1.6, 2.4, -2.4, PI]
-const FIT_SLIDES := [0.0, 4.0, 8.0, 12.0, 16.0]
+const FIT_SLIDES := [0.0, 4.0, 8.0, 12.0, 16.0, 20.0, 24.0, 28.0, 32.0, 40.0, 48.0, 56.0, 64.0]
 static var _pose_points: Dictionary = {}   # anim name -> PackedVector2Array
+var _blocked := PackedByteArray()   # room px -> 1 where a body may not lie
+var _blocked_ready := false
 
 
 ## Where and how a pixel body lies so that no part of it, in any frame of
 ## its death or its dead pose, covers a wall or furniture: the hit direction
-## and its own pose first, then other poses, a little turned, then slid out
-## a few px. Returns [position (global), head direction, variant].
+## and its own pose first, then other poses, a little turned, then slid out,
+## nearest spot first. Returns [position (global), head direction, variant].
 func fit_corpse(at: Vector2, direction: Vector2, corpse: Dictionary) -> Array:
 	var who: String = corpse.pixel
 	var size := float(corpse.get("size", 1.0))
@@ -137,36 +142,161 @@ func fit_corpse(at: Vector2, direction: Vector2, corpse: Dictionary) -> Array:
 	var space := get_world_2d().direct_space_state
 	var query := PhysicsPointQueryParameters2D.new()
 	query.collision_mask = CORPSE_BLOCKERS
+	if not _blocked_ready:
+		_build_blocked()
+	var offsets := {}   # [turn, variant] -> the pose's points turned and sized, worked out once
+	# First the nearest spot where it fits completely (any touch rules a
+	# spot out, so this is quick)...
+	for slide in FIT_SLIDES:
+		var shifts: Array = [Vector2.ZERO] if slide == 0.0 else _ring(slide)
+		for t in FIT_TURNS.size():
+			var heading := direction.rotated(FIT_TURNS[t])
+			for v in variants.size():
+				var turned := _turned_pose(offsets, t, v, who, variants[v], heading, size)
+				for shift in shifts:
+					var placed: Vector2 = at + shift
+					if _count_blocked(placed, turned, 1) == 0:
+						var touches := 0
+						for off in turned:   # physics to confirm
+							query.position = placed + off
+							if not space.intersect_point(query, 1).is_empty():
+								touches += 1
+								break
+						if touches == 0:
+							return [placed, heading, variants[v]]
+	# ...nowhere: the spot nearby where the least of it overlaps.
 	var best := [at, direction, variants[0]]
 	var best_hits := 1 << 30
 	for slide in FIT_SLIDES:
-		for turn in FIT_TURNS:
-			var heading := direction.rotated(turn)
-			for variant in variants:
-				var points := pose_points(who + "_death" + variant, who + "_dead" + variant)
-				for shift in ([Vector2.ZERO] if slide == 0.0 else _ring(slide)):
-					var hits := 0
-					var placed: Vector2 = at + shift
-					var turn_by := heading.angle() + PI * 0.5
-					for point in points:
-						query.position = placed + (point * size).rotated(turn_by)
-						if not space.intersect_point(query, 1).is_empty():
-							hits += 1
-							if hits >= best_hits:
-								break
-					if hits == 0:
-						return [placed, heading, variant]
+		if slide > 16.0:
+			break
+		var shifts: Array = [Vector2.ZERO] if slide == 0.0 else _ring(slide)
+		for t in FIT_TURNS.size():
+			var heading := direction.rotated(FIT_TURNS[t])
+			for v in variants.size():
+				var turned := _turned_pose(offsets, t, v, who, variants[v], heading, size)
+				for shift in shifts:
+					var hits := _count_blocked(at + shift, turned, best_hits)
 					if hits < best_hits:
 						best_hits = hits
-						best = [placed, heading, variant]
+						best = [at + shift, heading, variants[v]]
 	return best
 
 
-## Eight spots `distance` px around (0, 0).
+func _turned_pose(cache: Dictionary, t: int, v: int, who: String, variant: String, heading: Vector2, size: float) -> PackedVector2Array:
+	var key := t * 8 + v
+	if not cache.has(key):
+		var turned := PackedVector2Array()
+		var turn_by := heading.angle() + PI * 0.5
+		for point in pose_points(who + "_death" + variant, who + "_dead" + variant):
+			turned.append((point * size).rotated(turn_by))
+		cache[key] = turned
+	return cache[key]
+
+
+## How many of the body's points at `placed` land on blocked pixels,
+## counting no further than `limit`.
+func _count_blocked(placed: Vector2, turned: PackedVector2Array, limit: int) -> int:
+	var base := placed - global_position
+	var width := area_size.x
+	var hits := 0
+	for off in turned:
+		var x := int(floorf(base.x + off.x))
+		var y := int(floorf(base.y + off.y))
+		if x < 0 or y < 0 or x >= width or y >= area_size.y or _blocked[y * width + x] == 1:
+			hits += 1
+			if hits >= limit:
+				break
+	return hits
+
+
+## Works out every body's points at the start, not on the first kill.
+func _warm_poses() -> void:
+	for who in ["hero", "enemy", "dog"]:
+		for variant in ["", "2", "3", "4"]:
+			if not HdBody.info_of(who + "_death" + variant).is_empty():
+				pose_points(who + "_death" + variant, who + "_dead" + variant)
+
+
+## May a body not lie on this room pixel? Walls, the strips along them and
+## furniture: its collision and its whole drawn shape (collision boxes only
+## cover a piece's foot). Pixels of a piece that look like the floor under
+## them (rug edges, cut-out margins) don't count.
+func _is_blocked(at: Vector2) -> bool:
+	if not _blocked_ready:
+		_build_blocked()
+	var p := Vector2i((at - global_position).floor())
+	if p.x < 0 or p.y < 0 or p.x >= area_size.x or p.y >= area_size.y:
+		return true
+	return _blocked[p.y * area_size.x + p.x] == 1
+
+
+func _build_blocked() -> void:
+	if _blocked_ready:
+		return
+	_blocked_ready = true
+	_blocked.resize(area_size.x * area_size.y)
+	_blocked.fill(0)
+	var map: Node = null
+	for piece in get_tree().get_nodes_in_group("picture_pieces"):
+		map = piece.get_parent().get_parent()
+		break
+	if map == null:
+		map = get_parent().get_node_or_null("LevelMap")
+	if map:
+		for body in map.find_children("*", "CollisionObject2D", true, false):
+			if body.collision_layer & CORPSE_BLOCKERS == 0:
+				continue
+			for shape in body.find_children("*", "CollisionShape2D", false, false):
+				if shape.disabled or not shape.shape is RectangleShape2D:
+					continue
+				var xf: Transform2D = shape.get_global_transform()
+				var half: Vector2 = shape.shape.size * 0.5
+				var box := Rect2(xf * -half, Vector2.ZERO).expand(xf * half).expand(xf * Vector2(half.x, -half.y)).expand(xf * Vector2(-half.x, half.y))
+				_fill(Rect2i(Vector2i((box.position - global_position).floor()), Vector2i(box.size.ceil())))
+	var floor_image: Image = null
+	var floor_scale := 1.0
+	if map and map.get("picture"):
+		floor_image = map.picture.get_image()
+		if floor_image.is_compressed():
+			floor_image.decompress()
+		floor_scale = map.picture_scale
+	for piece in get_tree().get_nodes_in_group("picture_pieces"):
+		var image: Image = piece.texture.get_image()
+		if image.is_compressed():
+			image.decompress()
+		var xf: Transform2D = piece.get_global_transform()
+		for y in image.get_height():
+			for x in image.get_width():
+				var colour := image.get_pixel(x, y)
+				if colour.a < 0.5:
+					continue
+				var at: Vector2 = xf * (piece.offset + Vector2(x, y) + Vector2(0.5, 0.5))
+				var p := Vector2i((at - global_position).floor())
+				if p.x < 0 or p.y < 0 or p.x >= area_size.x or p.y >= area_size.y:
+					continue
+				if floor_image:
+					var under_at := Vector2i((at * floor_scale).floor())
+					if under_at.x < floor_image.get_width() and under_at.y < floor_image.get_height():
+						var under := floor_image.get_pixelv(under_at)
+						if absf(under.r - colour.r) + absf(under.g - colour.g) + absf(under.b - colour.b) < 0.15:
+							continue
+				_blocked[p.y * area_size.x + p.x] = 1
+
+
+func _fill(box: Rect2i) -> void:
+	var clipped := box.intersection(Rect2i(Vector2i.ZERO, area_size))
+	for y in range(clipped.position.y, clipped.end.y):
+		for x in range(clipped.position.x, clipped.end.x):
+			_blocked[y * area_size.x + x] = 1
+
+
+## Spots `distance` px around (0, 0), about 6 px apart (at least eight).
 static func _ring(distance: float) -> Array:
 	var spots := []
-	for i in 8:
-		spots.append(Vector2.from_angle(TAU * i / 8.0) * distance)
+	var count := maxi(8, int(TAU * distance / 6.0))
+	for i in count:
+		spots.append(Vector2.from_angle(TAU * i / count) * distance)
 	return spots
 
 
@@ -187,19 +317,35 @@ static func pose_points(death: String, dead: String) -> PackedVector2Array:
 			image.decompress()
 		var scale := float(info.game_scale)
 		var step := maxi(int(round(1.0 / scale)), 1)   # about 1 room px
+		# Each sample stands for the step x step block of art pixels from it,
+		# so a limb one art pixel thin is never missed (QA): smear the
+		# picture back by up to step - 1 px across, then down.
+		image.convert(Image.FORMAT_RGBA8)
+		var w := image.get_width()
+		var h := image.get_height()
+		for axis in [Vector2i.RIGHT, Vector2i.DOWN]:
+			var smeared := image.duplicate()
+			for k in range(1, step):
+				var by: Vector2i = axis * k
+				smeared.blend_rect(image, Rect2i(by, Vector2i(w, h) - by), Vector2i.ZERO)
+			image = smeared
+		var centre := Vector2(step, step) * 0.5
 		var frames: Array = range(int(info.frames))   # every frame: a pose in between can poke out too (QA)
 		for f in frames:
 			for y in range(0, int(info.cell_h), step):
 				for x in range(0, int(info.cell_w), step):
 					if image.get_pixel(f * int(info.cell_w) + x, y).a < 0.5:
 						continue
-					var point := (Vector2(x, y) - Vector2(info.pivot[0], info.pivot[1])) * scale
-					seen[Vector2i(point.round())] = true
-	var list: Array = seen.keys()
+					var point := (Vector2(x, y) + centre - Vector2(info.pivot[0], info.pivot[1])) * scale
+					seen[Vector2i(point.round())] = point
+	# Keep the outline, and inside it every third px: nothing a body could
+	# cover (walls, furniture) is smaller than that, and it's 3x quicker.
+	var list: Array = seen.keys().filter(func(p: Vector2i): return (p.x % 3 == 0 and p.y % 3 == 0) \
+			or not (seen.has(p + Vector2i.LEFT) and seen.has(p + Vector2i.RIGHT) and seen.has(p + Vector2i.UP) and seen.has(p + Vector2i.DOWN)))
 	list.sort_custom(func(a, b): return Vector2(a).length_squared() > Vector2(b).length_squared())
 	var points := PackedVector2Array()
 	for p in list:
-		points.append(Vector2(p))
+		points.append(seen[p])
 	_pose_points[key] = points
 	return points
 

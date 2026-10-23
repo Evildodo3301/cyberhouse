@@ -41,7 +41,8 @@ func fling(from: Vector2, direction: Vector2, speed: float = 140.0) -> void:
 
 
 ## Dropped right by a wall: moved the least it takes so no part of it can
-## lie in the wall (QA).
+## lie in the wall (QA). Where even its spinning circle can't fit (a narrow
+## corridor), it lies along the free space instead (_settle).
 func _step_out_of_walls() -> void:
 	if not is_inside_tree():
 		return
@@ -58,6 +59,37 @@ func _step_out_of_walls() -> void:
 			if space.intersect_shape(query, 1).is_empty():
 				global_position = at
 				return
+	_settle()
+
+
+## Its drawn shape at `at`, turned `angle`, touches a wall or door?
+func _box_hits(space: PhysicsDirectSpaceState2D, at: Vector2, angle: float) -> bool:
+	var query := PhysicsShapeQueryParameters2D.new()
+	var box := RectangleShape2D.new()
+	box.size = weapon.floor_size() if weapon and weapon.floor_texture else Vector2(18, 18)
+	query.shape = box
+	query.transform = Transform2D(angle, at)
+	query.collision_mask = 1 | 16
+	return not space.intersect_shape(query, 1).is_empty()
+
+
+## Comes to rest with no part of its picture in a wall: turned first, then
+## moved the least it takes (nearest spot, any turn).
+func _settle() -> void:
+	if not is_inside_tree():
+		return
+	var space := get_world_2d().direct_space_state
+	if not _box_hits(space, global_position, rotation):
+		return
+	for distance in range(0, int(_half_length() * 3.0) + 1):
+		for i in (1 if distance == 0 else 16):
+			var at := global_position + Vector2.from_angle(TAU * i / 16.0) * distance
+			for k in 16:
+				var angle := rotation + PI * k / 16.0
+				if not _box_hits(space, at, angle):
+					global_position = at
+					rotation = angle
+					return
 
 
 func _physics_process(delta: float) -> void:
@@ -77,6 +109,11 @@ func _physics_process(delta: float) -> void:
 		query.motion = step
 		query.collision_mask = 1 | 16
 		var free_part := space.cast_motion(query)
+		if not space.intersect_shape(query, 1).is_empty():
+			# Already touching (no room for the circle here): the cast can't
+			# be trusted, so stop it before its middle reaches the wall.
+			var ray := PhysicsRayQueryParameters2D.create(global_position, global_position + step * 1.5, 1 | 16)
+			free_part = [] if space.intersect_ray(ray).is_empty() else [0.0]
 		if free_part.is_empty() or free_part[0] >= 1.0:
 			global_position += step
 			rotation += 12.0 * delta
@@ -84,6 +121,8 @@ func _physics_process(delta: float) -> void:
 			global_position += step * free_part[0]
 			_velocity = Vector2.ZERO
 		_velocity = _velocity.move_toward(Vector2.ZERO, 420.0 * delta)
+		if _velocity.length() < 2.0:
+			_settle()
 		if thrower and _velocity.length() >= KNOCK_SPEED:
 			_hit_enemy()
 	var player := get_tree().get_first_node_in_group("player")
