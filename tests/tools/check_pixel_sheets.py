@@ -19,11 +19,11 @@ from pathlib import Path
 
 from PIL import Image
 
-ROOM_PER_SPRITE_PX = 0.5   # README: 1 sprite pixel = 0.5 room pixel
+ROOM_PER_SPRITE_PX = 1 / 3   # set B since 2026-10-23: every sheet draws at 1/3 room px per sprite px
 PX_PER_M = 30.0            # room px per metre (person 0.5 m = 15 px)
 folder = Path(sys.argv[1])
 _data = json.loads((folder / (sys.argv[2] if len(sys.argv) > 2 else "pixel_anims.json")).read_text())
-anims = _data.get("anims", _data)
+anims = {n: a for n, a in _data.get("anims", _data).items() if isinstance(a, dict) and "file" in a}
 reference = Path(sys.argv[3]) if len(sys.argv) > 3 else None
 fails, warns = [], []
 
@@ -91,7 +91,7 @@ for name, a in sorted(anims.items()):
         xs = [p[0] for p in pts]
         ys = [p[1] for p in pts]
         edges = [side for side, hit in (("left", min(xs) == 0), ("top", min(ys) == 0), ("right", max(xs) == a["cell_w"] - 1), ("bottom", max(ys) == a["cell_h"] - 1)) if hit]
-        if edges:
+        if edges and "footprint" not in name:   # footprint stamps are cut tight on purpose
             fails.append(f"{name} frame {i}: touches the cell edge ({', '.join(edges)}), may be cut off")
         lonely = [p for p in pts if not any((p[0] + dx, p[1] + dy) in pts for dx in (-1, 0, 1) for dy in (-1, 0, 1) if dx or dy)]
         if lonely:
@@ -116,6 +116,8 @@ for name, a in sorted(anims.items()):
         part = "head" if track is head_centres else "body"
         (warns if room > 1.0 else []).append(f"{name}: {part} jumps {room:.1f} room px between frames in the loop")
         print(f"{name}: {part} moves at most {room:.1f} room px between loop frames")
+    if "death" in name and not a.get("dead") and (folder / f"{who}_dead.png").exists():
+        a["dead"] = f"{who}_dead.png"
     if a.get("dead") and cells:
         dead = Image.open(folder / a["dead"]).convert("RGBA")
         last, still = cells[-1].crop(cells[-1].getbbox()), dead.crop(dead.getbbox())
@@ -140,6 +142,8 @@ for who, sheets in heads.items():
     for n, m in med.items():
         print(f"  {n:16s} {m:3d}" + ("" if not base else f"  ({100 * m / base:.0f}% of walking)"))
         # Shading at the head's edge makes this rough: over 25% fails, 15-25% is for a look by eye.
+        if base and "death" in n and not 0.7 <= m / base <= 1.1:
+            warns.append(f"{n}: head is {100 * m / base:.0f}% the size of the walking head (corpses may be a little smaller, not much)")
         if base and "death" not in n and abs(m / base - 1) > 0.15:
             (fails if abs(m / base - 1) > 0.25 else warns).append(f"{n}: head is {100 * m / base:.0f}% the size of the walking head")
 
@@ -157,8 +161,8 @@ if reference:
             new = trimmed_length(Image.open(folder / a["dead"]).convert("RGBA"))
             old = trimmed_length(Image.open(reference / f"{who}_dead.png").convert("RGBA"))
             print(f"  {a['dead']:16s} {new:.1f} room px long vs {who}_dead.png {old:.1f} ({new / PX_PER_M:.2f} m)")
-            if abs(new / old - 1) > 0.2:
-                fails.append(f"{a['dead']}: {new:.1f} room px long, the original dead pose is {old:.1f} (more than 20% off)")
+            if abs(new / old - 1) > 0.2:   # other poses (curled, arms up) differ on purpose: look by eye
+                warns.append(f"{a['dead']}: {new:.1f} room px long, the original dead pose is {old:.1f} (more than 20% off; fine if the pose explains it)")
         base = f"{who}_trot" if who == "dog" else f"{who}_walk"
         if base in ref and "footprint" not in name and "death" not in name:
             sheet = Image.open(folder / a["file"]).convert("RGBA")
