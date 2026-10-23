@@ -63,6 +63,13 @@ const FENCED_OFF := {
 	"level_01": [Vector2i(0, 0)],
 	"level_01_floor2": [Vector2i(0, 0)],
 }
+## Furniture a dog may run under (Fianso: dogs are shorter than a table).
+const DOG_FITS_UNDER := ["table", "desk", "dining"]   # and plain chairs (not armchairs)
+## Every animation a body can show next to a wall.
+const MOVE_ANIMS := ["idle", "walk", "trot"]
+const ATTACK_ANIMS := ["punch", "pistol", "shotgun", "machinegun", "machete", "bite"]
+## More than this many of a body's pixels drawn into a wall = FAIL.
+const WALL_LIMIT := 3
 ## More than this many of a person's pixels covered by furniture = FAIL.
 const HIDDEN_LIMIT := 6
 ## Fianso's rule: furniture never overlaps a person (player or enemy), either
@@ -298,16 +305,60 @@ func check_level(path: String, rendering: bool) -> void:
 			var w: Dictionary = worst[i]
 			note("%s: up to %d%% of a person drawn over it at %s facing %s" % [names[i], int(100.0 * w.on_top / person_size), w.on_top_at, compass(w.on_top_facing)])
 		if not dog_masks.is_empty():
-			var dog_reach := flood(dogs[0], dogs[0].global_position, dogs[0].get_node("CollisionShape2D").shape.radius, 1 | 32, size)
+			var dog_reach := flood(dogs[0], dogs[0].global_position, dogs[0].get_node("CollisionShape2D").shape.radius, dogs[0].collision_mask & ~16, size)
 			var dog_worst := sweep(dog_reach, dog_masks, owner_of, size, pieces)
-			var dog_bad := range(pieces.size()).filter(func(i): return dog_worst[i].hidden > HIDDEN_LIMIT)
-			# Allowed: dogs are shorter than a table (Fianso). Listed for a human look.
-			note("dogs can go under (allowed): %s" % [", ".join(dog_bad.map(func(i): return names[i]))])
+			var dog_under := range(pieces.size()).filter(func(i): return dog_worst[i].hidden > HIDDEN_LIMIT)
+			# Fianso: dogs may go under tables (they're shorter), but never push
+			# into a sofa, a cabinet or a plant.
+			var under_table := func(i): return DOG_FITS_UNDER.any(func(k): return names[i].contains(k)) or (names[i].contains("chair") and not names[i].contains("armchair") and not names[i].contains("wingback"))
+			var dog_into := dog_under.filter(func(i): return not under_table.call(i))
+			check(dog_into.is_empty(), "the dog never pushes into furniture it can't fit under (%d piece(s))" % dog_into.size())
+			for i in dog_into:
+				note("%s: up to %d px of the dog inside it at %s facing %s" % [names[i], dog_worst[i].hidden, dog_worst[i].hidden_at, compass(dog_worst[i].hidden_facing)])
+				if rendering:
+					await snapshot(level, dogs[0], dog_worst[i].hidden_at, dog_worst[i].hidden_facing, "%s_dog_into_%s" % [path.get_file().get_basename(), names[i]])
+			note("the dog can go under (allowed): %s" % [", ".join(dog_under.filter(under_table).map(func(i): return names[i]))])
 		if rendering:
 			for i in hidden_bad:
 				await snapshot(level, player, worst[i].hidden_at, worst[i].hidden_facing, "%s_under_%s" % [path.get_file().get_basename(), names[i]])
 			for i in on_top_bad:
 				await snapshot(level, player, worst[i].on_top_at, worst[i].on_top_facing, "%s_over_%s" % [path.get_file().get_basename(), names[i]])
+
+	# --- 6. Walls: no person or dog drawn into a wall, in any pose or direction ---
+	var wall := PackedByteArray()   # room pixel -> 1 wall or outside, 2 pool
+	wall.resize(size.x * size.y)
+	for y in size.y:
+		for x in size.x:
+			var letter: String = map.tile(Vector2i(x, y) / int(map.tile_px))
+			if letter in ["#", " "]:
+				wall[y * size.x + x] = 1
+			elif letter == "~":
+				wall[y * size.x + x] = 2
+	var near_wall := dilate(wall, size, 40)
+	await check_walls("a person walking", player, reach, body_masks(player.get_node_or_null("HdBody"), MOVE_ANIMS), wall, near_wall, size, map, path, rendering)
+	await check_walls("a person attacking", player, reach, body_masks(player.get_node_or_null("HdBody"), ATTACK_ANIMS), wall, near_wall, size, map, path, rendering)
+	if not dogs.is_empty():
+		var dog_reach_walls := flood(dogs[0], dogs[0].global_position, dogs[0].get_node("CollisionShape2D").shape.radius, dogs[0].collision_mask & ~16, size)
+		await check_walls("the dog walking", dogs[0], dog_reach_walls, body_masks(dogs[0].get_node_or_null("HdBody"), MOVE_ANIMS), wall, near_wall, size, map, path, rendering)
+		await check_walls("the dog biting", dogs[0], dog_reach_walls, body_masks(dogs[0].get_node_or_null("HdBody"), ATTACK_ANIMS), wall, near_wall, size, map, path, rendering)
+
+	# --- 7. Pixel size: characters and rooms drawn with pixels the same size ---
+	var room_texel := 1.0   # room px per texel of the floor picture / furniture
+	if map.picture:
+		room_texel = map.size_px.x / float(map.picture.get_width())
+	elif not pieces.is_empty():
+		room_texel = absf(pieces[0].global_scale.x)
+	for who in [player] + dogs.slice(0, 1):
+		var hd = who.get_node_or_null("HdBody")
+		if hd == null:
+			continue
+		var body := HdBody.new()
+		body.setup(hd.who)
+		body.show_anim("walk" if body.has_anim("walk") else "trot", 0)
+		var texel: float = absf(body.scale.x)
+		body.free()
+		var ratio := texel / room_texel
+		check(ratio > 0.75 and ratio < 1.33, "%s is drawn with %.2f room px per art pixel, the room with %.2f: %s" % [who.name, texel, room_texel, "the same" if ratio > 0.75 and ratio < 1.33 else "the character is %.1fx sharper than the room" % (1.0 / ratio) if ratio < 1.0 else "the room is %.1fx sharper" % ratio])
 
 	# --- 3. Real-life sizes ---
 	for i in pieces.size():
@@ -581,12 +632,95 @@ func sweep(reach: Dictionary, masks: Array, owner_of: PackedInt32Array, size: Ve
 	return worst
 
 
+## 1 for every pixel within `radius` of a non-zero pixel of `grid`.
+func dilate(grid: PackedByteArray, size: Vector2i, radius: int) -> PackedByteArray:
+	var rows := PackedByteArray()
+	rows.resize(grid.size())
+	for y in size.y:
+		var last := -100000
+		for x in size.x:   # left to right, then right to left
+			if grid[y * size.x + x]:
+				last = x
+			if x - last <= radius:
+				rows[y * size.x + x] = 1
+		last = 100000
+		for x in range(size.x - 1, -1, -1):
+			if grid[y * size.x + x]:
+				last = x
+			if last - x <= radius:
+				rows[y * size.x + x] = 1
+	var out := PackedByteArray()
+	out.resize(grid.size())
+	for x in size.x:
+		var last := -100000
+		for y in size.y:
+			if rows[y * size.x + x]:
+				last = y
+			if y - last <= radius:
+				out[y * size.x + x] = 1
+		last = 100000
+		for y in range(size.y - 1, -1, -1):
+			if rows[y * size.x + x]:
+				last = y
+			if last - y <= radius:
+				out[y * size.x + x] = 1
+	return out
+
+
+## Sweeps a body over every spot it can reach and fails if, in some pose and
+## direction, more than WALL_LIMIT of its pixels land on a wall or outside.
+func check_walls(label: String, who: Node2D, reach: Dictionary, masks: Array, wall: PackedByteArray, near_wall: PackedByteArray, size: Vector2i, map: Node2D, path: String, rendering: bool) -> void:
+	var worst := 0
+	var worst_at := Vector2.ZERO
+	var worst_facing := Vector2.DOWN
+	var spots := 0
+	var pool_worst := 0
+	var seen := {}   # wall tile -> true, to count places, not pixels
+	for p in reach:
+		if not near_wall[p.y * size.x + p.x]:
+			continue
+		for f in masks.size():
+			var n := 0
+			var n_pool := 0
+			for m in masks[f]:
+				var q: Vector2i = p + m
+				if q.x < 0 or q.y < 0 or q.x >= size.x or q.y >= size.y:
+					n += 1
+					continue
+				var w := wall[q.y * size.x + q.x]
+				if w == 1:
+					n += 1
+				elif w == 2:
+					n_pool += 1
+			pool_worst = maxi(pool_worst, n_pool)
+			if n > WALL_LIMIT:
+				seen[Vector2i(p) / int(map.tile_px * 4)] = true
+			if n > worst:
+				worst = n
+				worst_at = Vector2(p)
+				worst_facing = Vector2.DOWN.rotated(TAU * f / masks.size())
+	spots = seen.size()
+	check(worst <= WALL_LIMIT, "%s is never drawn into a wall, in any pose or direction (worst: %d px at %s facing %s, in about %d places)" % [label, worst, worst_at, compass(worst_facing), spots])
+	check(pool_worst <= WALL_LIMIT, "%s is never drawn over the pool (worst %d px)" % [label, pool_worst], true)
+	if worst > WALL_LIMIT and rendering:
+		await snapshot(null, who, worst_at, worst_facing, "%s_%s_into_wall" % [path.get_file().get_basename(), label.replace(" ", "_")])
+
+
 ## Puts the player at `at`, renders, and saves a close-up.
 func snapshot(level: Node, player: Node2D, at: Vector2, facing: Vector2, label: String) -> void:
 	player.global_position = at
 	player.get_node("HdBody").face(facing)
+	# The camera follows the player; for a dog, hold it still over the dog.
+	var camera := player.get_viewport().get_camera_2d()
+	var hold: bool = camera != null and player.is_in_group("enemies")
+	if hold:
+		camera.process_mode = Node.PROCESS_MODE_DISABLED
+		camera.global_position = at
+		camera.reset_smoothing()
 	for i in 30:   # let the camera catch up
 		await process_frame
+	if hold:
+		camera.process_mode = Node.PROCESS_MODE_INHERIT
 	var image := root.get_viewport().get_texture().get_image()
 	# A close-up around the person, wherever the camera is.
 	var stretch := Vector2(image.get_size()) / root.get_viewport().get_visible_rect().size

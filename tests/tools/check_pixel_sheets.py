@@ -1,6 +1,11 @@
 """QA: checks a pixel-art character set before it goes to Fianso.
 
     python3 tests/tools/check_pixel_sheets.py <folder with pixel_anims.json>
+    python3 tests/tools/check_pixel_sheets.py <extras folder> <anims json name> <reference set folder>
+
+With a reference set it also checks each new sheet against the original of the
+same character (head width, body length, dead pose length) and that every
+death ends on its *_dead picture.
 
 Looks for: sheets the wrong size, sprites cut off at a cell edge, half-see-through
 or lonely stray pixels, heads changing size between sheets of one character,
@@ -17,7 +22,9 @@ from PIL import Image
 ROOM_PER_SPRITE_PX = 0.5   # README: 1 sprite pixel = 0.5 room pixel
 PX_PER_M = 30.0            # room px per metre (person 0.5 m = 15 px)
 folder = Path(sys.argv[1])
-anims = json.loads((folder / "pixel_anims.json").read_text())["anims"]
+_data = json.loads((folder / (sys.argv[2] if len(sys.argv) > 2 else "pixel_anims.json")).read_text())
+anims = _data.get("anims", _data)
+reference = Path(sys.argv[3]) if len(sys.argv) > 3 else None
 fails, warns = [], []
 
 
@@ -91,7 +98,7 @@ for name, a in sorted(anims.items()):
             warns.append(f"{name} frame {i}: {len(lonely)} lonely pixel(s) at {lonely[:4]}")
         centres.append((sum(xs) / len(xs), sum(ys) / len(ys)))
         widths.append(max(xs) - min(xs) + 1)
-        if who in ("hero", "enemy") and "blood" not in name:
+        if who in ("hero", "enemy") and "blood" not in name and "footprint" not in name:
             px = cell.load()
             head = biggest_blob([p for p in pts if is_head(who, px[p])])
             if len(head) > 8:
@@ -109,11 +116,20 @@ for name, a in sorted(anims.items()):
         part = "head" if track is head_centres else "body"
         (warns if room > 1.0 else []).append(f"{name}: {part} jumps {room:.1f} room px between frames in the loop")
         print(f"{name}: {part} moves at most {room:.1f} room px between loop frames")
-    if centres and not name.startswith("blood"):
+    if a.get("dead") and cells:
+        dead = Image.open(folder / a["dead"]).convert("RGBA")
+        last, still = cells[-1].crop(cells[-1].getbbox()), dead.crop(dead.getbbox())
+        if last.size != still.size:
+            fails.append(f"{name}: last frame {last.size} is not the dead pose {a['dead']} {still.size}")
+        else:
+            differ = sum(1 for p, q in zip(last.get_flattened_data(), still.get_flattened_data()) if p != q)
+            if differ > 0.02 * last.size[0] * last.size[1]:
+                fails.append(f"{name}: last frame differs from {a['dead']} in {differ} pixels")
+    if centres and not name.startswith("blood") and not name.startswith("footprint"):
         cx = sum(c[0] for c in centres) / len(centres)
         cy = sum(c[1] for c in centres) / len(centres)
         off = ((cx - a["pivot"][0]) ** 2 + (cy - a["pivot"][1]) ** 2) ** 0.5 * ROOM_PER_SPRITE_PX
-        if off > 3.0 and "death" not in name and "machete" not in name:
+        if off > 3.0 and "death" not in name and "machete" not in name and "bite" not in name:
             warns.append(f"{name}: body centre is {off:.1f} room px from the turning point (pivot)")
     print(f"{name:16s} {a['frames']:2d}f  width {min(widths) * ROOM_PER_SPRITE_PX:.1f}-{max(widths) * ROOM_PER_SPRITE_PX:.1f} room px")
 
@@ -127,17 +143,60 @@ for who, sheets in heads.items():
         if base and "death" not in n and abs(m / base - 1) > 0.15:
             (fails if abs(m / base - 1) > 0.25 else warns).append(f"{n}: head is {100 * m / base:.0f}% the size of the walking head")
 
+def trimmed_length(im):
+    box = im.getbbox()
+    return max(box[2] - box[0], box[3] - box[1]) * ROOM_PER_SPRITE_PX if box else 0.0
+
+
+if reference:
+    ref = json.loads((reference / "pixel_anims.json").read_text())["anims"]
+    print("\nAgainst the original set:")
+    for name, a in sorted(anims.items()):
+        who = name.split("_")[0]
+        if a.get("dead") and (reference / f"{who}_dead.png").exists():
+            new = trimmed_length(Image.open(folder / a["dead"]).convert("RGBA"))
+            old = trimmed_length(Image.open(reference / f"{who}_dead.png").convert("RGBA"))
+            print(f"  {a['dead']:16s} {new:.1f} room px long vs {who}_dead.png {old:.1f} ({new / PX_PER_M:.2f} m)")
+            if abs(new / old - 1) > 0.2:
+                fails.append(f"{a['dead']}: {new:.1f} room px long, the original dead pose is {old:.1f} (more than 20% off)")
+        base = f"{who}_trot" if who == "dog" else f"{who}_walk"
+        if base in ref and "footprint" not in name and "death" not in name:
+            sheet = Image.open(folder / a["file"]).convert("RGBA")
+            rs = Image.open(reference / ref[base]["file"]).convert("RGBA")
+            rc = rs.crop((0, 0, ref[base]["cell_w"], ref[base]["cell_h"])).getbbox()
+            nb = sheet.crop((0, 0, a["cell_w"], a["cell_h"])).getbbox()
+            ow, nw = rc[2] - rc[0], nb[2] - nb[0]
+            print(f"  {name:16s} first frame {nw * ROOM_PER_SPRITE_PX:.1f} room px wide vs {base} {ow * ROOM_PER_SPRITE_PX:.1f}")
+            if abs(nw / ow - 1) > 0.25:
+                warns.append(f"{name}: first frame is {100 * nw / ow:.0f}% as wide as {base}")
+    for who, sheets in heads.items():
+        rname = f"{who}_dead.png"
+        if (reference / rname).exists():
+            im = Image.open(reference / rname).convert("RGBA")
+            px = im.load()
+            head = biggest_blob([p for p in opaque(im) if is_head(who, px[p])])
+            if head:
+                rw = max(p[0] for p in head) - min(p[0] for p in head) + 1
+                for n, v in sheets.items():
+                    m = sorted(v)[len(v) // 2]
+                    print(f"  {n:16s} head {m} px vs {rname} head {rw} px")
+                    if abs(m / rw - 1) > 0.25:
+                        warns.append(f"{n}: head {m} px wide vs {rw} px in {rname}")
+
 for who in ("hero", "enemy"):
+    if f"{who}_walk" not in anims:
+        continue
     _, cells = frames(f"{who}_walk")
     w = max(max(p[0] for p in opaque(c)) - min(p[0] for p in opaque(c)) + 1 for c in cells) * ROOM_PER_SPRITE_PX
     print(f"\n{who}: up to {w:.1f} room px across = {w / PX_PER_M:.2f} m (person with swinging arms: 0.5-0.7 m)")
     if not 0.45 <= w / PX_PER_M <= 0.8:
         fails.append(f"{who}: {w / PX_PER_M:.2f} m across while walking")
-_, cells = frames("dog_trot")
-length = max(max(p[1] for p in opaque(c)) - min(p[1] for p in opaque(c)) + 1 for c in cells) * ROOM_PER_SPRITE_PX
-print(f"dog: {length:.1f} room px long = {length / PX_PER_M:.2f} m (doberman 0.9-1.3 m)")
-if not 0.9 <= length / PX_PER_M <= 1.3:
-    fails.append(f"dog: {length / PX_PER_M:.2f} m long")
+if "dog_trot" in anims:
+    _, cells = frames("dog_trot")
+    length = max(max(p[1] for p in opaque(c)) - min(p[1] for p in opaque(c)) + 1 for c in cells) * ROOM_PER_SPRITE_PX
+    print(f"dog: {length:.1f} room px long = {length / PX_PER_M:.2f} m (doberman 0.9-1.3 m)")
+    if not 0.9 <= length / PX_PER_M <= 1.3:
+        fails.append(f"dog: {length / PX_PER_M:.2f} m long")
 
 print()
 for f in fails:
