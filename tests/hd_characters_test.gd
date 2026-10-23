@@ -41,7 +41,7 @@ func _initialize() -> void:
 
 	# Size: one sprite pixel = one screen pixel at the 3x camera (crisp), and
 	# people the size the houses were built for; the dog stays 1.1 m.
-	check(is_equal_approx(hero.scale.x * 3.0, 1.0) and is_equal_approx(dog_body.scale.x, 0.5), "people drawn 1 sprite px = 1 screen px, the dog at the Art Director's size")
+	check(is_equal_approx(hero.scale.x * 3.0, 1.0) and is_equal_approx(dog_body.scale.x * 3.0, 1.0), "people and the dog drawn 1 sprite px = 1 screen px (the same pixels as the rooms)")
 	var hero_shape = player.get_node("CollisionShape2D")
 	var dog_shape = dog.get_node("CollisionShape2D")
 	check(hero_shape.shape is CapsuleShape2D and absf(hero_shape.shape.radius - 7.33) < 0.1 and absf(dog_shape.shape.height - 34.0) < 0.1, "bodies are shaped like their pictures (person 14.7 px wide, dog 34 px long)")
