@@ -1025,7 +1025,8 @@ func _draw_overlay() -> void:
 			var frame := int((_muzzle_length() - _muzzle_time) * carried_weapon.fire_fps)
 			var rect := WeaponData.frame_rect(art, carried_weapon.fire_frames, frame)
 			o.draw_set_transform(facing * _muzzle_distance(), facing.angle())
-			o.draw_texture_rect_region(art, Rect2(Vector2(0, -rect.size.y / 2.0), rect.size), rect)
+			var drawn := rect.size * carried_weapon.art_scale
+			o.draw_texture_rect_region(art, Rect2(Vector2(0, -drawn.y / 2.0), drawn), rect)
 			o.draw_set_transform(Vector2.ZERO)
 		else:
 			o.draw_circle(facing * _muzzle_distance(), 3.0, Color(1, 0.95, 0.6))

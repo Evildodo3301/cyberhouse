@@ -25,6 +25,7 @@ shake = 2.5
 void_flash = 0.6
 automatic = true
 color = Color(0.55, 0.95, 0.75, 1)
+art_scale = 0.3333333
 floor_texture = ExtResource("2_floor")
 icon = ExtResource("3_icon")
 thrown_texture = ExtResource("4_thrown")
