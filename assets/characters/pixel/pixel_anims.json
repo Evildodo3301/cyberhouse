@@ -1,5 +1,5 @@
 {
- "note": "Pixel set B (Art Director, approved by Fianso 2026-10-23), converted for HdBody: game_scale 0.5 (1 sprite px = 0.5 room px), _mg renamed _machinegun, idle and dead stills added. Source: art/hd-characters/pixel-v1/set/pixel_anims.json.",
+ "note": "Pixel set B (Art Director, approved by Fianso 2026-10-23), converted for HdBody: game_scale 0.5 (1 sprite px = 0.5 room px), _mg renamed _machinegun, idle and dead stills added. Source: art/hd-characters/pixel-v1/set/pixel_anims.json. Deaths: the people's death sheets and dead stills are drawn 1.5x finer (game_scale 0.5 x HdBody.size() = 1/3, the same as the living); the dog and all blood stay at 0.5.",
  "anims": {
   "blood_pool": {
    "file": "blood_pool_10f.png",
@@ -82,13 +82,13 @@
   "enemy_death": {
    "file": "enemy_death_23f.png",
    "frames": 23,
-   "cell_w": 72,
-   "cell_h": 77,
+   "cell_w": 106,
+   "cell_h": 113,
    "fps": 12,
    "loop": false,
    "pivot": [
-    34,
-    35
+    50,
+    52
    ],
    "game_scale": 0.5
   },
@@ -173,13 +173,13 @@
   "hero_death": {
    "file": "hero_death_23f.png",
    "frames": 23,
-   "cell_w": 92,
-   "cell_h": 96,
+   "cell_w": 122,
+   "cell_h": 129,
    "fps": 12,
    "loop": false,
    "pivot": [
-    44,
-    45
+    61,
+    58
    ],
    "game_scale": 0.5
   },
@@ -277,13 +277,13 @@
   "hero_dead": {
    "file": "hero_dead.png",
    "frames": 1,
-   "cell_w": 92,
-   "cell_h": 96,
+   "cell_w": 122,
+   "cell_h": 129,
    "fps": 1,
    "loop": true,
    "pivot": [
-    44,
-    45
+    61,
+    58
    ],
    "game_scale": 0.5
   },
@@ -303,13 +303,13 @@
   "enemy_dead": {
    "file": "enemy_dead.png",
    "frames": 1,
-   "cell_w": 72,
-   "cell_h": 77,
+   "cell_w": 106,
+   "cell_h": 113,
    "fps": 1,
    "loop": true,
    "pivot": [
-    34,
-    35
+    50,
+    52
    ],
    "game_scale": 0.5
   },

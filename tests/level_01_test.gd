@@ -37,13 +37,13 @@ func _initialize() -> void:
 		return not space.intersect_point(q).is_empty()
 
 	# Built from the picture.
-	check(map.picture != null and map.picture.get_size() == Vector2(736, 424), "the floor is Fianso's picture (736 x 424 px)")
+	check(map.picture != null and map.picture.get_size() == Vector2(2208, 1272) and map.picture_scale == 3.0, "the floor is Fianso's picture, 3x sharp to match the people (2208 x 1272 px, drawn at 1/3)")
 	var pieces: Array = root.get_tree().get_nodes_in_group("picture_pieces")
 	check(pieces.size() == 40, "40 pieces of furniture cut out of it (%d)" % pieces.size())
 	var data = load(map.picture_pieces).data
 	var sofa: Dictionary = data.pieces.filter(func(p): return p.name == "sofa_top")[0]
 	var sofa_node = pieces.filter(func(p): return p.name == "SofaTop")[0]
-	check(sofa_node.position.y == sofa.sort_y and sofa_node.position.y + sofa_node.offset.y == sofa.y, "furniture stands at its base, so whoever is lower down is drawn in front")
+	check(sofa_node.position.y == sofa.sort_y and is_equal_approx(sofa_node.position.y + sofa_node.offset.y * sofa_node.scale.y, sofa.y) and is_equal_approx(sofa_node.texture.get_width() * sofa_node.scale.x, sofa.w), "furniture stands at its base, so whoever is lower down is drawn in front")
 	var box := Rect2(sofa.collision[0], sofa.collision[1], sofa.collision[2], sofa.collision[3])
 	check(blocks.call(box.get_center(), 1) and not blocks.call(Vector2(sofa.x + 2, sofa.y + 2), 1), "bullets stop at the sofa's seat, not at the top of its back")
 	check(blocks.call(Vector2(sofa.x + 2, sofa.y + 2), 64) and blocks.call(Vector2(sofa.x + sofa.w / 2.0, sofa.y + 1), 64) and player.collision_mask & 64 != 0, "people keep clear of the whole sofa, back included (their picture never covers it)")

@@ -867,7 +867,7 @@ func _initialize() -> void:
 	var dying_script = load("res://scripts/fx/dying_body.gd")
 	var gore_layer = main.get_node("Gore")
 	var dying_dog = gore_layer.get_children().filter(func(c): return c.get_script() == dying_script)
-	check(dying_dog.size() == 1 and dying_dog[0].corpse.get("dog", false), "the dog's body lies there dying (a doberman body)")
+	check(dying_dog.size() == 1 and dying_dog[0].corpse.get("pixel", "") == "dog", "the dog's body lies there dying (the doberman's pixel death)")
 	await reload_room(false)
 	main = current_scene
 	player = main.get_node("Player")
@@ -890,7 +890,8 @@ func _initialize() -> void:
 	pool_at_half = dying[0].pool_radius()
 	check(twitches.size() > 5, "the legs shiver (%d different bends)" % twitches.size())
 	check(most_drops >= 4, "blood spurts out of the wound (%d drops in the air)" % most_drops)
-	check(pool_at_half > 3.0 and pool_at_half < dying_script.POOL_FULL, "the pool is still spreading (%.1f px)" % pool_at_half)
+	var full_pool: float = dying_script._pool_radius_of(dying_script.POOL_LAST) if dying[0].is_pixel() else dying_script.POOL_FULL
+	check(pool_at_half > 3.0 and pool_at_half < full_pool, "the pool is still spreading (%.1f of %.1f px)" % [pool_at_half, full_pool])
 	await create_timer(dying_script.DURATION).timeout
 	check(gore_layer.get_children().filter(func(c): return c.get_script() == dying_script).is_empty() and gore_layer.kill_count == 1, "afterwards the body and pool are painted into the floor")
 	for level in [game.BloodLevel.REDUCED, game.BloodLevel.OFF]:
@@ -911,7 +912,8 @@ func _initialize() -> void:
 			most_drops = maxi(most_drops, dying[0]._drops.size())
 		var label: String = game.BloodLevel.keys()[level]
 		check(most_drops == 0, "%s blood: no spurts" % label)
-		check(dying[0].pool_radius() <= dying_script.POOL_REDUCED and (level != game.BloodLevel.OFF or dying[0].pool_radius() == 0.0), "%s blood: %s" % [label, "a small pool" if level == game.BloodLevel.REDUCED else "no pool"])
+		var small_pool: float = dying_script._pool_radius_of(dying_script.POOL_LAST_REDUCED) if dying[0].is_pixel() else dying_script.POOL_REDUCED
+		check(dying[0].pool_radius() <= small_pool and (level != game.BloodLevel.OFF or dying[0].pool_radius() == 0.0), "%s blood: %s" % [label, "a small pool" if level == game.BloodLevel.REDUCED else "no pool"])
 		check(not dying[0].gory, "%s blood: no burst head" % label)
 	game.blood_level = game.BloodLevel.FULL
 

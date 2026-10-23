@@ -219,6 +219,9 @@ enum WallStyle { NEON, PLASTER }
 
 ## Size of the level in pixels.
 var size_px: Vector2
+## Picture pixels per room pixel: the floors are drawn 3x sharper than the
+## room grid (Fianso: rooms as crisp as the people), so draw them at 1/3.
+var picture_scale := 1.0
 var _rows: PackedStringArray
 var _room_of_tile: Dictionary = {}   # Vector2i -> room index
 var _walls: Array[Rect2] = []
@@ -265,6 +268,8 @@ func _ready() -> void:
 	for row in _rows:
 		width = maxi(width, row.length())
 	size_px = Vector2(width, _rows.size()) * tile_px
+	if picture:
+		picture_scale = picture.get_width() / size_px.x
 	_find_rooms()
 	_build_walls()
 	_build_doorways()
@@ -636,8 +641,9 @@ func _place_picture_pieces() -> void:
 		piece.texture = load("%s/pieces/%s.png" % [folder, entry.name])
 		piece.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 		piece.centered = false
+		piece.scale = Vector2.ONE / picture_scale
 		piece.position = Vector2(entry.x, entry.sort_y)
-		piece.offset = Vector2(0, entry.y - entry.sort_y)
+		piece.offset = Vector2(0, entry.y - entry.sort_y) * picture_scale
 		piece.add_to_group("picture_pieces")
 		_furniture_layer.add_child(piece)
 		var box := Rect2(entry.collision[0], entry.collision[1], entry.collision[2], entry.collision[3])
@@ -655,7 +661,9 @@ func _place_picture_pieces() -> void:
 		shape.shape = rectangle
 		body.add_child(shape)
 		add_child(body)
-		_add_keep_out(_drawn_rect(piece.texture, Rect2(Vector2.ZERO, piece.texture.get_size())).grow(KEEP_OUT), Vector2(entry.x, entry.y), entry.name, _is_low(entry.name))
+		var drawn := _drawn_rect(piece.texture, Rect2(Vector2.ZERO, piece.texture.get_size()))
+		drawn = Rect2(drawn.position / picture_scale, drawn.size / picture_scale)
+		_add_keep_out(drawn.grow(KEEP_OUT), Vector2(entry.x, entry.y), entry.name, _is_low(entry.name))
 
 
 ## The part of `region` of `texture` that is actually drawn (not see-through),
@@ -975,7 +983,7 @@ func _build_navigation() -> void:
 ## its own part of the square covering it, so the pattern stays seamless.
 func _draw_floor(canvas: Node2D) -> void:
 	if picture:
-		canvas.draw_texture(picture, Vector2.ZERO)
+		canvas.draw_texture_rect(picture, Rect2(Vector2.ZERO, size_px), false)
 		return
 	var per := maxi(16 / tile_px, 1)   # map tiles per art square, each way
 	for at in _floor_tiles:
@@ -1036,7 +1044,7 @@ func _draw_walls(canvas: Node2D) -> void:
 		# The walls are in the picture already; draw those parts again on
 		# top so blood never paints over a wall or a painting.
 		for rect in _walls:
-			canvas.draw_texture_rect_region(picture, rect, rect)
+			canvas.draw_texture_rect_region(picture, rect, Rect2(rect.position * picture_scale, rect.size * picture_scale))
 		return
 	if wall_style == WallStyle.PLASTER:
 		_draw_plaster_walls(canvas)

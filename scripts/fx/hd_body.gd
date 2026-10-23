@@ -157,9 +157,29 @@ func _body_shape() -> CollisionShape2D:
 
 
 func _info(anim: String) -> Dictionary:
+	return info_of(who + "_" + anim)
+
+
+## An animation's entry in the table ("hero_death", "blood_pool", ...).
+static func info_of(full_name: String) -> Dictionary:
 	if _anims.is_empty():
 		_anims = load(ANIMS_FILE).data.anims   # imported as a JSON resource, so it ships in the APK
-	return _anims.get(who + "_" + anim, {})
+	return _anims.get(full_name, {})
+
+
+## Draws one frame of an animation onto `canvas` (the gore layer paints
+## bodies and blood this way): its pivot at `at`, turned by `angle`, drawn
+## `size` times the Art Director's scale. Frames face down, so angle =
+## heading - PI/2.
+static func draw_frame(canvas: CanvasItem, full_name: String, index: int, at: Vector2, angle: float, size := 1.0, color := Color.WHITE) -> void:
+	var info := info_of(full_name)
+	if info.is_empty():
+		return
+	var cell := Vector2(info.cell_w, info.cell_h)
+	var region := Rect2(Vector2(cell.x * clampi(index, 0, int(info.frames) - 1), 0), cell)
+	canvas.draw_set_transform(at, angle, Vector2.ONE * float(info.game_scale) * size)
+	canvas.draw_texture_rect_region(_texture(info.file), Rect2(-Vector2(info.pivot[0], info.pivot[1]), cell), region, color)
+	canvas.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
 static func _texture(file: String) -> Texture2D:

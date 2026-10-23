@@ -844,6 +844,8 @@ func take_hit(attacker: Node2D, direction: Vector2, weapon: String) -> void:
 	if _sprite:
 		_sprite.visible = false
 		_legs_sprite.visible = false
+	if _hd:
+		_hd.visible = false   # the gore layer plays the death from here
 	died.emit(weapon)
 	Game.shake(settings.big_shake)
 	if settings.big_vibration_ms > 0:
@@ -995,6 +997,8 @@ func _make_sprite(texture: Texture2D) -> Sprite2D:
 
 ## The body the gore layer paints when you die: the template's "die" pose.
 func _corpse() -> Dictionary:
+	if _hd:
+		return {"pixel": _hd.who, "size": _hd.size()}   # the Art Director's death, then the dead pose
 	if body_sheet == null:
 		return {}
 	var frame: int = 0 if body_sheet.get_width() <= 64 else DIE_FRAMES[1]

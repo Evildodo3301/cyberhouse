@@ -899,6 +899,8 @@ func _attack_shift() -> float:
 
 ## The corpse the gore layer paints when it dies (empty = placeholder shapes).
 func _corpse() -> Dictionary:
+	if _hd:
+		return {"pixel": _hd.who, "size": _hd.size()}   # the Art Director's death, then the dead pose
 	if is_dog:
 		return {"dog": true}
 	if sheet == null:

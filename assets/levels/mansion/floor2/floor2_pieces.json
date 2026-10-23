@@ -650,5 +650,12 @@
     18
    ]
   }
- ]
+ ],
+ "px_per_room": 3,
+ "texture_scale": 0.3333333333333333,
+ "size_tex": [
+  2208,
+  1272
+ ],
+ "note": "x, y, w, h, sort_y and collision are ROOM px (same as 1x). Draw textures at scale 1/px_per_room."
 }

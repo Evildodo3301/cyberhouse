@@ -15,8 +15,10 @@ extends Node2D
 ## (a small dark stain, no spray) or OFF (bodies only, no blood).
 ##
 ## Size note: this image covers the whole level map, so walking back shows
-## every earlier kill. A 3000 x 2000 px map costs about 24 MB of memory, fine
-## on phones; much bigger levels will split it into tiles (M4).
+## every earlier kill. It holds DETAIL pixels per room pixel, so the bodies
+## painted in keep the people's 1/3 room px pixel art; level 1 (736 x 424
+## room px) costs about 11 MB of memory, fine on phones; much bigger levels
+## will split it into tiles (M4).
 
 ## Size of the floor area that can hold gore (match the level size).
 @export var area_size: Vector2i = Vector2i(480, 320)
@@ -28,6 +30,9 @@ var kill_count: int = 0
 ## How many footprints have been painted, and how dark the last one was (test).
 var footprint_count: int = 0
 var last_footprint_alpha: float = 0.0
+
+## Image pixels per room pixel: as fine as the people's pixel art (1/3).
+const DETAIL := 3
 
 var _viewport: SubViewport   # an off-screen canvas we paint into
 var _painter: Node2D         # draws the new stamps into that canvas
@@ -41,7 +46,7 @@ var _wet: Dictionary = {}   # Vector2i -> true
 func _ready() -> void:
 	add_to_group("gore")
 	_viewport = SubViewport.new()
-	_viewport.size = area_size
+	_viewport.size = area_size * DETAIL
 	_viewport.transparent_bg = true
 	_viewport.disable_3d = true
 	# Pixel art stays sharp when bodies are painted in (no blurring).
@@ -53,12 +58,14 @@ func _ready() -> void:
 	add_child(_viewport)
 
 	_painter = Node2D.new()
+	_painter.scale = Vector2.ONE * DETAIL   # paints in room px
 	_painter.draw.connect(_paint_pending)
 	_viewport.add_child(_painter)
 
 	var floor_image := Sprite2D.new()
 	floor_image.texture = _viewport.get_texture()
 	floor_image.centered = false
+	floor_image.scale = Vector2.ONE / DETAIL
 	add_child(floor_image)
 
 
@@ -106,6 +113,19 @@ func add_stains(drops: Array) -> void:
 
 ## The dying is over: paint its pool and body into the floor for good.
 func finish_kill(dying: DyingBody) -> void:
+	if dying.is_pixel():
+		_queue({
+			"kind": "pixel_body",
+			"pool_frame": dying.pool_frame(),
+			"pool_at": dying.pool_center(),
+			"pool_turn": dying._pool_turn,
+			"pool_size": dying.pool_size(),
+			"pool_radius": dying.pool_radius(),
+			"at": dying.at,
+			"direction": dying.direction,
+			"corpse": dying.corpse,
+		})
+		return
 	_queue({
 		"kind": "body",
 		"pool": dying.pool_polygon(dying.pool_radius()) if dying.pool_radius() > 0.5 else PackedVector2Array(),
@@ -134,8 +154,7 @@ func is_bloody(at: Vector2) -> bool:
 		return true
 	for child in get_children():
 		if child is DyingBody:
-			var middle: Vector2 = child.at + child.direction * 4.0
-			if local.distance_to(middle) < child.pool_radius() * 0.65:
+			if local.distance_to(child.pool_center()) < child.pool_radius() * 0.65:
 				return true
 	return false
 
@@ -177,7 +196,7 @@ func _paint_pending() -> void:
 				draw_body(_painter, stamp.at, stamp.direction, stamp.body_color, {"torn": true}, true)
 			"stains":
 				for drop in stamp.drops:
-					_painter.draw_circle(drop[0], drop[1], blood_color if randf() < 0.7 else dark_blood_color)
+					_pixel_dot(drop[0], drop[1], blood_color if randf() < 0.7 else dark_blood_color)
 					if drop[1] >= 1.5:
 						_mark_wet(drop[0], drop[1])
 			"body":
@@ -192,6 +211,11 @@ func _paint_pending() -> void:
 						reach += point.distance_to(middle)
 					_mark_wet(middle, reach / stamp.pool.size() * 0.8)
 				draw_body(_painter, stamp.at, stamp.direction, stamp.body_color, stamp.corpse, stamp.gory)
+			"pixel_body":
+				if stamp.pool_frame >= 0:
+					HdBody.draw_frame(_painter, "blood_pool", stamp.pool_frame, stamp.pool_at, stamp.pool_turn, stamp.pool_size)
+					_mark_wet(stamp.pool_at, stamp.pool_radius * 0.8)
+				draw_body(_painter, stamp.at, stamp.direction, Color.WHITE, stamp.corpse, false)
 			"foot":
 				_paint_footprint(stamp)
 
@@ -207,9 +231,18 @@ func _paint_spray(at: Vector2, direction: Vector2, explosive: bool) -> void:
 		var angle := direction.angle() + randf_range(-spread, spread) * 0.6
 		var length := randf_range(12.0, reach * 0.8)
 		var end := at + Vector2.from_angle(angle) * length
-		_painter.draw_line(at, end, blood_color, randf_range(1.5, 3.0))
-		_painter.draw_circle(end, randf_range(1.5, 2.5), blood_color)
+		var width := randf_range(0.75, 1.5)
+		for step in int(length / BLOOD_PIXEL):
+			_pixel_dot(at.lerp(end, step * BLOOD_PIXEL / length), width, blood_color)
+		_pixel_dot(end, randf_range(1.5, 2.5), blood_color)
 		_mark_wet(end, 1.5)
+
+	# The Art Director's splats: a couple of big pixel splashes in the spray.
+	if not explosive:
+		for i in 2:
+			var splash := at + direction.rotated(randf_range(-spread, spread) * 0.5) * randf_range(10.0, reach * 0.6)
+			HdBody.draw_frame(_painter, "blood_splat", randi_range(0, 3), splash, PI * 0.5 * randi_range(0, 3))
+			_mark_wet(splash, 4.0)
 
 	# Spray: lots of small drops, denser close to the body.
 	for i in drops:
@@ -217,9 +250,28 @@ func _paint_spray(at: Vector2, direction: Vector2, explosive: bool) -> void:
 		var distance := pow(randf(), 1.6) * reach + 3.0
 		var color := blood_color if randf() < 0.75 else dark_blood_color
 		var size := randf_range(0.6, 2.4)
-		_painter.draw_circle(at + Vector2.from_angle(angle) * distance, size, color)
+		_pixel_dot(at + Vector2.from_angle(angle) * distance, size, color)
 		if size >= 1.8:
 			_mark_wet(at + Vector2.from_angle(angle) * distance, size)
+
+
+## Blood is pixel art like the Art Director's pools and splats: drops and
+## streaks are made of BLOOD_PIXEL squares, never smooth circles.
+const BLOOD_PIXEL := 0.5
+
+
+func _pixel_dot(center: Vector2, radius: float, color: Color) -> void:
+	var lo := ((center - Vector2.ONE * radius) / BLOOD_PIXEL).floor()
+	var hi := ((center + Vector2.ONE * radius) / BLOOD_PIXEL).ceil()
+	var drew := false
+	for y in range(int(lo.y), int(hi.y)):
+		for x in range(int(lo.x), int(hi.x)):
+			var cell := Vector2(x, y) * BLOOD_PIXEL
+			if (cell + Vector2.ONE * BLOOD_PIXEL * 0.5).distance_to(center) <= radius:
+				_painter.draw_rect(Rect2(cell, Vector2.ONE * BLOOD_PIXEL), color)
+				drew = true
+	if not drew:   # a tiny drop: one pixel
+		_painter.draw_rect(Rect2((center / BLOOD_PIXEL).floor() * BLOOD_PIXEL, Vector2.ONE * BLOOD_PIXEL), color)
 
 
 ## One footprint: the Art Director's print for that walker (a left shoe or
@@ -249,6 +301,8 @@ func _paint_footprint(stamp: Dictionary) -> void:
 static func draw_body(canvas: CanvasItem, at: Vector2, direction: Vector2, color: Color, corpse: Dictionary, gory: bool, legs: float = 0.0) -> void:
 	if corpse.get("torn", false):
 		_draw_torn(canvas, at, color)
+	elif corpse.has("pixel"):
+		HdBody.draw_frame(canvas, corpse.pixel + "_dead", 0, at, direction.angle() + PI * 0.5, float(corpse.get("size", 1.0)))
 	elif corpse.get("dog", false):
 		_draw_dog(canvas, at, direction, legs)
 	elif corpse.has("texture"):
