@@ -242,8 +242,18 @@ func check_level(path: String, rendering: bool) -> void:
 	note("a person is %.1f px across the shoulders, so 1 m = %.1f px" % [person_px, px_per_m])
 
 	# --- 4. Reachability (doors count as open) ---
-	var player_radius: float = player.get_node("CollisionShape2D").shape.radius
+	var player_radius: float = smallest_radius(player)
 	var reach := flood(player, player.global_position, player_radius, player.collision_mask & ~16, size)
+	# Bodies are capsules that turn with the picture: where one can't face a
+	# way without hitting something, it is never drawn that way there.
+	var player_blocked := blocked_by_facing(player, reach)
+	var dogs_early := enemies.filter(func(e): return e.is_dog)
+	var dog_reach := {}
+	var dog_blocked := []
+	if not dogs_early.is_empty():
+		var dog0: Node2D = dogs_early[0]
+		dog_reach = flood(dog0, dog0.global_position, smallest_radius(dog0), dog0.collision_mask & ~16, size)
+		dog_blocked = blocked_by_facing(dog0, dog_reach)
 	note("%d spots a person can stand on" % reach.size())
 	var unreached_rooms := []
 	var rooms := {}
@@ -286,7 +296,7 @@ func check_level(path: String, rendering: bool) -> void:
 		var under := people.filter(func(who): return not drawn_above_furniture(who, map))
 		var people_on_top := under.is_empty()
 		check(people_on_top or not map.has_node("Furniture"), "the player and every enemy are drawn above the furniture layer %s" % [under.map(func(who): return who.name)])
-		var worst := sweep(reach, person_masks, owner_of, size, pieces, people_on_top)
+		var worst := sweep(reach, person_masks, owner_of, size, pieces, people_on_top, player_blocked)
 		var hidden_bad := []
 		var on_top_bad := []
 		for i in pieces.size():
@@ -305,8 +315,7 @@ func check_level(path: String, rendering: bool) -> void:
 			var w: Dictionary = worst[i]
 			note("%s: up to %d%% of a person drawn over it at %s facing %s" % [names[i], int(100.0 * w.on_top / person_size), w.on_top_at, compass(w.on_top_facing)])
 		if not dog_masks.is_empty():
-			var dog_reach := flood(dogs[0], dogs[0].global_position, dogs[0].get_node("CollisionShape2D").shape.radius, dogs[0].collision_mask & ~16, size)
-			var dog_worst := sweep(dog_reach, dog_masks, owner_of, size, pieces)
+			var dog_worst := sweep(dog_reach, dog_masks, owner_of, size, pieces, false, dog_blocked)
 			var dog_under := range(pieces.size()).filter(func(i): return dog_worst[i].hidden > HIDDEN_LIMIT)
 			# Fianso: dogs may go under tables (they're shorter), but never push
 			# into a sofa, a cabinet or a plant.
@@ -335,12 +344,11 @@ func check_level(path: String, rendering: bool) -> void:
 			elif letter == "~":
 				wall[y * size.x + x] = 2
 	var near_wall := dilate(wall, size, 40)
-	await check_walls("a person walking", player, reach, body_masks(player.get_node_or_null("HdBody"), MOVE_ANIMS), wall, near_wall, size, map, path, rendering)
-	await check_walls("a person attacking", player, reach, body_masks(player.get_node_or_null("HdBody"), ATTACK_ANIMS), wall, near_wall, size, map, path, rendering)
+	await check_walls("a person walking", player, reach, body_masks(player.get_node_or_null("HdBody"), MOVE_ANIMS), wall, near_wall, size, map, path, rendering, player_blocked)
+	await check_walls("a person attacking", player, reach, body_masks(player.get_node_or_null("HdBody"), ATTACK_ANIMS), wall, near_wall, size, map, path, rendering, player_blocked)
 	if not dogs.is_empty():
-		var dog_reach_walls := flood(dogs[0], dogs[0].global_position, dogs[0].get_node("CollisionShape2D").shape.radius, dogs[0].collision_mask & ~16, size)
-		await check_walls("the dog walking", dogs[0], dog_reach_walls, body_masks(dogs[0].get_node_or_null("HdBody"), MOVE_ANIMS), wall, near_wall, size, map, path, rendering)
-		await check_walls("the dog biting", dogs[0], dog_reach_walls, body_masks(dogs[0].get_node_or_null("HdBody"), ATTACK_ANIMS), wall, near_wall, size, map, path, rendering)
+		await check_walls("the dog walking", dogs[0], dog_reach, body_masks(dogs[0].get_node_or_null("HdBody"), MOVE_ANIMS), wall, near_wall, size, map, path, rendering, dog_blocked)
+		await check_walls("the dog biting", dogs[0], dog_reach, body_masks(dogs[0].get_node_or_null("HdBody"), ATTACK_ANIMS), wall, near_wall, size, map, path, rendering, dog_blocked)
 
 	# --- 7. Pixel size: characters and rooms drawn with pixels the same size ---
 	var room_texel := 1.0   # room px per texel of the floor picture / furniture
@@ -359,6 +367,29 @@ func check_level(path: String, rendering: bool) -> void:
 		body.free()
 		var ratio := texel / room_texel
 		check(ratio > 0.75 and ratio < 1.33, "%s is drawn with %.2f room px per art pixel, the room with %.2f: %s" % [who.name, texel, room_texel, "the same" if ratio > 0.75 and ratio < 1.33 else "the character is %.1fx sharper than the room" % (1.0 / ratio) if ratio < 1.0 else "the room is %.1fx sharper" % ratio])
+
+	# --- 8. Dying: no size or pixel-size jump from the living body to the corpse ---
+	var people_alive := enemies.filter(func(e): return not e.is_dog)
+	if not people_alive.is_empty() and people_alive[0].has_method("_corpse"):
+		var corpse: Dictionary = people_alive[0]._corpse()
+		var hd_alive = people_alive[0].get_node_or_null("HdBody")
+		if corpse.has("texture") and hd_alive:
+			var body := HdBody.new()
+			body.setup(hd_alive.who)
+			body.show_anim("walk", 0)
+			var alive_texel: float = absf(body.scale.x)
+			body.free()
+			var image: Image = corpse.texture.get_image()
+			if image.is_compressed():
+				image.decompress()
+			var used := image.get_region(Rect2i(corpse.region)).get_used_rect()
+			var corpse_texel: float = corpse.scale
+			var lying_m := maxf(used.size.x, used.size.y) * corpse_texel / px_per_m
+			var jump := corpse_texel / alive_texel
+			check(jump > 0.8 and jump < 1.25, "a corpse is drawn with the same pixel size as the living body (corpse %.2f, alive %.2f room px per art pixel)" % [corpse_texel, alive_texel])
+			check(lying_m > 1.4 and lying_m < 2.0, "a corpse is the length of a person lying down: %.2f m (real 1.5-1.9 m)" % lying_m)
+		elif corpse.is_empty() or not corpse.has("texture"):
+			note("corpses are drawn by code here, not checked")
 
 	# --- 3. Real-life sizes ---
 	for i in pieces.size():
@@ -550,6 +581,17 @@ func flood(body: Node2D, start: Vector2, radius: float, mask: int, size: Vector2
 	return seen
 
 
+## The body's narrowest half-width: a circle this size fits wherever the
+## body fits facing some way (capsules turn with the picture).
+func smallest_radius(body: Node2D) -> float:
+	var shape: Shape2D = body.get_node("CollisionShape2D").shape
+	if shape is CircleShape2D or shape is CapsuleShape2D:
+		return shape.radius
+	if shape is RectangleShape2D:
+		return minf(shape.size.x, shape.size.y) * 0.5
+	return 4.0
+
+
 func body_fits(body: Node2D, at: Vector2, radius: float, mask: int) -> bool:
 	var circle := CircleShape2D.new()
 	circle.radius = radius
@@ -577,7 +619,7 @@ func near_reached(reach: Dictionary, at: Vector2, within: float) -> bool:
 
 ## For each piece: the most of a person it can draw over (hidden) and the
 ## most of a person drawn over it (on_top), and where.
-func sweep(reach: Dictionary, masks: Array, owner_of: PackedInt32Array, size: Vector2i, pieces: Array, on_top_always := false) -> Array:
+func sweep(reach: Dictionary, masks: Array, owner_of: PackedInt32Array, size: Vector2i, pieces: Array, on_top_always := false, blocked: Array = []) -> Array:
 	var worst := []
 	for i in pieces.size():
 		worst.append({"hidden": 0, "hidden_at": Vector2.ZERO, "hidden_facing": Vector2.DOWN, "on_top": 0, "on_top_at": Vector2.ZERO, "on_top_facing": Vector2.DOWN})
@@ -604,6 +646,8 @@ func sweep(reach: Dictionary, masks: Array, owner_of: PackedInt32Array, size: Ve
 		if not near2[p.y * size.x + p.x]:
 			continue
 		for f in masks.size():
+			if not blocked.is_empty() and blocked[f].has(p):
+				continue
 			hidden.clear()
 			on_top.clear()
 			for m in masks[f]:
@@ -630,6 +674,37 @@ func sweep(reach: Dictionary, masks: Array, owner_of: PackedInt32Array, size: Ve
 					worst[i].on_top_at = Vector2(p)
 					worst[i].on_top_facing = Vector2.DOWN.rotated(TAU * f / masks.size())
 	return worst
+
+
+## For each facing (as in body_masks): the spots in `reach` where the body's
+## real collision shape, turned that way (it turns with the picture), would
+## hit something. A body can't face that way there, so it's never drawn so.
+func blocked_by_facing(who: Node2D, reach: Dictionary) -> Array:
+	var out := []
+	var hd = who.get_node_or_null("HdBody")
+	var shape_node: CollisionShape2D = who.get_node("CollisionShape2D")
+	var q := PhysicsShapeQueryParameters2D.new()
+	q.shape = shape_node.shape
+	q.collision_mask = who.collision_mask & ~16
+	q.exclude = [who.get_rid()]
+	var space: PhysicsDirectSpaceState2D = who.get_world_2d().direct_space_state
+	var keep_rotation: float = shape_node.rotation
+	var keep_position: Vector2 = shape_node.position
+	for f in FACINGS:
+		var blocked := {}
+		if hd and hd.has_method("face"):
+			hd.face(Vector2.DOWN.rotated(TAU * f / FACINGS))
+		var local := shape_node.transform
+		for p in reach:
+			q.transform = Transform2D(0.0, Vector2(p)) * local
+			if not space.intersect_shape(q, 1).is_empty():
+				blocked[p] = true
+		out.append(blocked)
+	shape_node.rotation = keep_rotation
+	shape_node.position = keep_position
+	if hd and hd.has_method("face"):
+		hd.face(Vector2.DOWN)
+	return out
 
 
 ## 1 for every pixel within `radius` of a non-zero pixel of `grid`.
@@ -669,7 +744,7 @@ func dilate(grid: PackedByteArray, size: Vector2i, radius: int) -> PackedByteArr
 
 ## Sweeps a body over every spot it can reach and fails if, in some pose and
 ## direction, more than WALL_LIMIT of its pixels land on a wall or outside.
-func check_walls(label: String, who: Node2D, reach: Dictionary, masks: Array, wall: PackedByteArray, near_wall: PackedByteArray, size: Vector2i, map: Node2D, path: String, rendering: bool) -> void:
+func check_walls(label: String, who: Node2D, reach: Dictionary, masks: Array, wall: PackedByteArray, near_wall: PackedByteArray, size: Vector2i, map: Node2D, path: String, rendering: bool, blocked: Array = []) -> void:
 	var worst := 0
 	var worst_at := Vector2.ZERO
 	var worst_facing := Vector2.DOWN
@@ -680,6 +755,8 @@ func check_walls(label: String, who: Node2D, reach: Dictionary, masks: Array, wa
 		if not near_wall[p.y * size.x + p.x]:
 			continue
 		for f in masks.size():
+			if not blocked.is_empty() and blocked[f].has(p):
+				continue
 			var n := 0
 			var n_pool := 0
 			for m in masks[f]:
