@@ -118,12 +118,12 @@ func finish_kill(dying: DyingBody) -> void:
 
 
 ## A bloody footprint (from BloodyFeet): `alpha` 0..1 fades it out.
-func add_footprint(at: Vector2, angle: float, alpha: float, paw: bool, left: bool) -> void:
+func add_footprint(at: Vector2, angle: float, alpha: float, kind: String, left: bool) -> void:
 	if alpha <= 0.02:
 		return
 	footprint_count += 1
 	last_footprint_alpha = alpha
-	_queue({"kind": "foot", "at": to_local(at), "angle": angle, "alpha": alpha, "paw": paw, "left": left})
+	_queue({"kind": "foot", "at": to_local(at), "angle": angle, "alpha": alpha, "kind_of_foot": kind, "left": left})
 
 
 ## True if there's blood on the floor at `at` (someone stepping here gets
@@ -222,24 +222,25 @@ func _paint_spray(at: Vector2, direction: Vector2, explosive: bool) -> void:
 			_mark_wet(at + Vector2.from_angle(angle) * distance, size)
 
 
-## One footprint: a shoe (sole + heel, about 0.27 m long) or a paw (pad and
-## four toes), pointing the way the walker went.
+## One footprint: the Art Director's print for that walker (a left shoe or
+## a paw, toe down), tinted dark blood, mirrored for the right foot, turned
+## the way the walker went.
+const FOOTPRINTS := {
+	"hero": preload("res://assets/characters/pixel/hero_foot.png"),
+	"enemy": preload("res://assets/characters/pixel/enemy_foot.png"),
+	"dog": preload("res://assets/characters/pixel/dog_paw.png"),
+}
+
+
 func _paint_footprint(stamp: Dictionary) -> void:
-	var color := dark_blood_color
+	var color := dark_blood_color.lightened(0.15)
 	color.a = stamp.alpha
-	_painter.draw_set_transform(stamp.at, stamp.angle, Vector2.ONE)
-	if stamp.paw:
-		_painter.draw_circle(Vector2(-0.5, 0.0), 1.1, color)
-		for toe in [Vector2(1.3, -1.2), Vector2(1.8, -0.4), Vector2(1.8, 0.4), Vector2(1.3, 1.2)]:
-			_painter.draw_circle(toe, 0.45, color)
-	else:
-		var flip := -1.0 if stamp.left else 1.0   # the big toe on the inside
-		_painter.draw_colored_polygon(PackedVector2Array([
-			Vector2(0.0, -1.3), Vector2(2.2, -1.5 + 0.2 * flip), Vector2(3.6, -0.8), Vector2(4.0, 0.0),
-			Vector2(3.6, 0.9), Vector2(2.2, 1.5 + 0.2 * flip), Vector2(0.0, 1.2)]), color)
-		_painter.draw_colored_polygon(PackedVector2Array([
-			Vector2(-1.2, -1.1), Vector2(-0.4, -1.2), Vector2(-0.4, 1.1), Vector2(-1.2, 1.0),
-			Vector2(-3.4, 1.0), Vector2(-4.0, 0.0), Vector2(-3.4, -1.0)]), color)
+	var kind: String = stamp.kind_of_foot
+	var texture: Texture2D = FOOTPRINTS.get(kind, FOOTPRINTS.hero)
+	var size := 0.5   # the Art Director's rule: a shoe print is about 0.27 m
+	var flip := 1.0 if stamp.left or kind == "dog" else -1.0
+	_painter.draw_set_transform(stamp.at, stamp.angle - PI * 0.5, Vector2(size * flip, size))
+	_painter.draw_texture(texture, -texture.get_size() / 2.0, color)
 	_painter.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 

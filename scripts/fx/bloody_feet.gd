@@ -19,7 +19,8 @@ const PAW_STEP_PX := 6.0
 ## How dark the first print is (1 = as dark as a pool).
 const FIRST_PRINT := 0.8
 
-## Paw prints (a dog) instead of shoes.
+## Whose feet: "hero", "enemy" (shoe prints) or "dog" (paw prints).
+var kind := "hero"
 var paws := false
 
 var _blood_left := 0.0   # px of walking before the soles are clean
@@ -28,8 +29,9 @@ var _left_foot := true
 var _gore: GoreLayer
 
 
-func _init(is_dog := false) -> void:
-	paws = is_dog
+func _init(whose := "hero") -> void:
+	kind = whose
+	paws = whose == "dog"
 
 
 ## Call after the walker moved by `moved` (room px) to `at`.
@@ -55,8 +57,8 @@ func update(walker: Node2D, at: Vector2, moved: Vector2) -> void:
 	var strength := clampf(_blood_left / fade_px, 0.0, 1.0)
 	if Game.blood_level == Game.BloodLevel.REDUCED:
 		strength *= 0.6
-	var side := moved.normalized().orthogonal() * (2.0 if paws else 2.5) * (-1.0 if _left_foot else 1.0)
-	_gore.add_footprint(at + side, moved.angle(), FIRST_PRINT * strength, paws, _left_foot)
+	var side := moved.normalized().orthogonal() * 2.0 * (-1.0 if _left_foot else 1.0)
+	_gore.add_footprint(at + side, moved.angle(), FIRST_PRINT * strength, kind, _left_foot)
 	_left_foot = not _left_foot
 
 

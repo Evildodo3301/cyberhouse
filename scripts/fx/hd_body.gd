@@ -14,9 +14,9 @@ extends Sprite2D
 ## pixel art stays crisp, and people are the size the houses were built for
 ## (about 0.5 m across; Fianso: normal people in big rooms).
 static var room_scale := 2.0 / 3.0
-## Extra size per character on top of room_scale: the doberman stays at the
-## Art Director's 1.1 m.
-const CHARACTER_SIZE := {"dog": 1.5}
+## Characters with a fixed size, whatever room_scale says: the doberman
+## stays at the Art Director's 0.5 rule (1.1 m).
+const FIXED_SIZE := {"dog": 1.0}
 ## Each character's body for collisions, fitted to the outline of its idle,
 ## walk and gun frames so the picture never pokes into a wall or furniture
 ## (Fianso): [half width, length, how far the middle sits in front of the
@@ -149,7 +149,7 @@ func fit_collision() -> void:
 
 ## How much bigger than the Art Director's size this character is drawn.
 func size() -> float:
-	return room_scale * CHARACTER_SIZE.get(who, 1.0)
+	return FIXED_SIZE.get(who, room_scale)
 
 
 func _body_shape() -> CollisionShape2D:

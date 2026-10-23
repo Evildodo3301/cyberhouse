@@ -212,7 +212,7 @@ var _feet: BloodyFeet
 
 func _physics_process(delta: float) -> void:
 	if _feet == null:
-		_feet = BloodyFeet.new(is_dog)
+		_feet = BloodyFeet.new("dog" if is_dog else "enemy")
 	if state == State.DEAD:
 		return
 	_state_time += delta

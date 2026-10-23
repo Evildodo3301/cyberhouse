@@ -65,7 +65,7 @@ func _initialize() -> void:
 	check(gore.footprint_count == after and not feet.is_wet(), "clean soles leave nothing")
 
 	# Dogs leave paw prints, with a shorter stride.
-	var paws = FEET.new(true)
+	var paws = FEET.new("dog")
 	paws.update(player, spot + Vector2.LEFT * 4.0, Vector2.RIGHT)
 	before = gore.footprint_count
 	walk(paws, player, out, 36.0)

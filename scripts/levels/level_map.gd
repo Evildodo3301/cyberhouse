@@ -142,6 +142,9 @@ const WATER_LAYER := 32
 ## piece's drawing, on its own layer, keeps the picture off the furniture
 ## (Fianso: furniture never overlaps people). Bullets, eyes and dogs ignore it.
 const KEEP_OUT_LAYER := 64
+## The keep-out round tables, desks and plain chairs is on its own layer:
+## people bump into it, dogs don't (they run under them).
+const LOW_KEEP_OUT_LAYER := 256
 ## Picture levels: the drawn walls have a trim band on the room side that
 ## the "#" tiles don't cover. A strip this wide along every wall face, on its
 ## own layer, keeps people's and dogs' pictures off it (Fianso: the dog's
@@ -617,7 +620,7 @@ func _place_furniture() -> void:
 			body.add_child(shape)
 			add_child(body)
 		if solid:
-			_add_keep_out(_drawn_rect(piece.texture, region).grow(KEEP_OUT), corner, parts[0])
+			_add_keep_out(_drawn_rect(piece.texture, region).grow(KEEP_OUT), corner, parts[0], _is_low(parts[0]))
 
 
 ## Picture levels: each furniture piece cut out of the drawing stands on the
@@ -652,7 +655,7 @@ func _place_picture_pieces() -> void:
 		shape.shape = rectangle
 		body.add_child(shape)
 		add_child(body)
-		_add_keep_out(_drawn_rect(piece.texture, Rect2(Vector2.ZERO, piece.texture.get_size())).grow(KEEP_OUT), Vector2(entry.x, entry.y), entry.name)
+		_add_keep_out(_drawn_rect(piece.texture, Rect2(Vector2.ZERO, piece.texture.get_size())).grow(KEEP_OUT), Vector2(entry.x, entry.y), entry.name, _is_low(entry.name))
 
 
 ## The part of `region` of `texture` that is actually drawn (not see-through),
@@ -668,10 +671,10 @@ func _drawn_rect(texture: Texture2D, region: Rect2) -> Rect2:
 
 
 ## A box only people bump into (see KEEP_OUT); enemies path round it too.
-func _add_keep_out(rect: Rect2, corner: Vector2, piece_name := "") -> void:
+func _add_keep_out(rect: Rect2, corner: Vector2, piece_name := "", low := false) -> void:
 	var body := StaticBody2D.new()
 	body.name = "KeepOut"
-	body.collision_layer = KEEP_OUT_LAYER
+	body.collision_layer = LOW_KEEP_OUT_LAYER if low else KEEP_OUT_LAYER
 	body.collision_mask = 0
 	body.add_to_group("nav_walls")
 	body.add_to_group("keep_out")
@@ -685,9 +688,11 @@ func _add_keep_out(rect: Rect2, corner: Vector2, piece_name := "") -> void:
 	add_child(body)
 
 
-## Tables and desks (by name): low enough for a dog to run under.
+## Tables, desks and plain chairs (by name): low enough for a dog to run
+## under. Never sofas, armchairs, cabinets, plants or consoles (Fianso).
 func _is_low(piece_name: String) -> bool:
-	return piece_name.contains("table") or piece_name.contains("desk") and not piece_name.contains("chair") or piece_name.begins_with("dining") or piece_name.begins_with("console")
+	var chair := piece_name.contains("chair") and not piece_name.contains("armchair")
+	return piece_name.contains("table") or piece_name.contains("desk") or chair or piece_name.begins_with("dining")
 
 
 ## A painting, sconce or similar on a wall: turned to face the room, drawn
@@ -857,7 +862,7 @@ func _spawn_things() -> void:
 					# Dogs are short: they run under tables and desks, drawn
 					# under the furniture. People never do (Fianso).
 					move_child(grunt, _furniture_layer.get_index())
-					grunt.collision_mask &= ~KEEP_OUT_LAYER
+					grunt.collision_mask &= ~LOW_KEEP_OUT_LAYER   # but not round sofas, consoles, plants...
 					for body in _low_bodies:
 						grunt.add_collision_exception_with(body)
 			"g":
@@ -954,7 +959,7 @@ func _build_navigation() -> void:
 	]))
 	nav_polygon.agent_radius = 8.0   # half a person's width (HdBody.BODY_SHAPES), plus a little
 	nav_polygon.parsed_geometry_type = NavigationPolygon.PARSED_GEOMETRY_STATIC_COLLIDERS
-	nav_polygon.parsed_collision_mask = 1 | WATER_LAYER | KEEP_OUT_LAYER | WALL_TRIM_LAYER
+	nav_polygon.parsed_collision_mask = 1 | WATER_LAYER | KEEP_OUT_LAYER | LOW_KEEP_OUT_LAYER | WALL_TRIM_LAYER
 	nav_polygon.source_geometry_mode = NavigationPolygon.SOURCE_GEOMETRY_GROUPS_WITH_CHILDREN
 	nav_polygon.source_geometry_group_name = &"nav_walls"
 	var region := NavigationRegion2D.new()
