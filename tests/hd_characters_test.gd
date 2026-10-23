@@ -31,18 +31,22 @@ func _initialize() -> void:
 	var dog = enemies.filter(func(e): return e.is_dog)[0]
 
 	var hero: HdBody = player.get_node("HdBody")
-	check(hero != null and hero.texture.resource_path.begins_with("res://assets/characters/hd/hero_"), "the hero uses the HD frames")
+	check(hero != null and hero.texture.resource_path.begins_with("res://assets/characters/pixel/hero_") and hero.texture_filter == CanvasItem.TEXTURE_FILTER_NEAREST, "the hero uses the pixel-art frames, unsmoothed")
 	check(hero.material.shader.resource_path.ends_with("outline.gdshader") and hero.material.get_shader_parameter("outline_color") == Color("3ce0c8"), "with the teal outline always on")
 	var suit: HdBody = people[0].get_node("HdBody")
-	check(suit.texture.resource_path.begins_with("res://assets/characters/hd/enemy_"), "enemies are the HD suit")
+	check(suit.texture.resource_path.begins_with("res://assets/characters/pixel/enemy_"), "enemies are the pixel suit")
 	check(suit.material.shader.resource_path.ends_with("implant_code.gdshader"), "with the green implant code running down the suit")
 	var dog_body: HdBody = dog.get_node("HdBody")
-	check(dog_body.texture.resource_path.begins_with("res://assets/characters/hd/dog_"), "the doberman is the HD cyber dog")
+	check(dog_body.texture.resource_path.begins_with("res://assets/characters/pixel/dog_"), "the doberman is the pixel cyber dog")
 
-	# Size: the old people's size (Fianso: normal people in big rooms).
-	var width: float = 83.0 * 0.459 * HdBody.room_scale   # the walk frame's shoulders, in room pixels
-	check(width > 14.5 and width < 17.0, "people are about 16 px across, like the old 15.6 (%.1f)" % width)
-	check(is_equal_approx(player.get_node("CollisionShape2D").shape.radius, 7.0) and is_equal_approx(people[0].get_node("CollisionShape2D").shape.radius, 7.0), "bodies are the old size (radius 7)")
+	# Size: one sprite pixel = one screen pixel at the 3x camera (crisp), and
+	# people the size the houses were built for; the dog stays 1.1 m.
+	check(is_equal_approx(hero.scale.x * 3.0, 1.0) and is_equal_approx(dog_body.scale.x, 0.5), "people drawn 1 sprite px = 1 screen px, the dog at the Art Director's size")
+	var hero_shape = player.get_node("CollisionShape2D")
+	var dog_shape = dog.get_node("CollisionShape2D")
+	check(hero_shape.shape is CapsuleShape2D and absf(hero_shape.shape.radius - 7.33) < 0.1 and absf(dog_shape.shape.height - 34.0) < 0.1, "bodies are shaped like their pictures (person 14.7 px wide, dog 34 px long)")
+	player._hd.face(Vector2.RIGHT)
+	check(is_equal_approx(hero_shape.rotation, player._hd.rotation) and hero_shape.position.x > 0.0, "and turn with them")
 	check(is_equal_approx(load("res://data/weapons/fists.tres").reach, 24.0) and is_equal_approx(load("res://data/weapons/machete.tres").reach, 34.0), "fists and machete reach as far as before")
 	check(is_equal_approx(people[0].settings.attack_range, 18.0) and is_equal_approx(dog.settings.attack_range, 16.0), "enemies and the dog attack from as far as before")
 
@@ -88,6 +92,33 @@ func _initialize() -> void:
 	dog._start_hd_attack()
 	dog._update_hd(0.05)
 	check(dog_body.current == "dog_bite", "and bites when it attacks")
+
+	# The picture never reaches outside the body (so never into a wall or
+	# furniture): every opaque pixel of the moving and aiming frames.
+	for owner in [player, people[0], dog]:
+		var body: HdBody = owner.get_node("HdBody")
+		var shape: CollisionShape2D = owner.get_node("CollisionShape2D")
+		var anims: Array = ["idle", "trot"] if body.who == "dog" else ["idle", "walk", "pistol", "machinegun"]
+		var worst := 0.0
+		for anim in anims:
+			var info: Dictionary = body._info(anim)
+			var image: Image = HdBody._texture(info.file).get_image()
+			if image.is_compressed():
+				image.decompress()
+			var s: float = float(info.game_scale) * body.size()
+			for f in int(info.frames):
+				for y in range(0, int(info.cell_h), 1):
+					for x in range(0, int(info.cell_w), 1):
+						if image.get_pixel(f * int(info.cell_w) + x, y).a < 0.5:
+							continue
+						# Frames face down: sprite x/y in body space; the capsule runs along y.
+						var p := (Vector2(x, y) + Vector2(0.5, 0.5) - Vector2(info.pivot[0], info.pivot[1])) * s
+						var middle := float(HdBody.BODY_SHAPES[body.who][2]) * body.size()
+						var r: float = shape.shape.radius
+						var half: float = shape.shape.height / 2.0 - r
+						var along := clampf(p.y - middle, -half, half)
+						worst = maxf(worst, p.distance_to(Vector2(0, middle + along)) - r)
+		check(worst <= 1.0, "%s: the picture stays inside the body (sticks out at most %.1f px)" % [body.who, worst])
 
 	print("\n%s (%d failure(s))" % ["ALL PASSED" if failures == 0 else "SOME FAILED", failures])
 	quit(failures)

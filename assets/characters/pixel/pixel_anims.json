@@ -1,0 +1,343 @@
+{
+ "note": "Pixel set B (Art Director, approved by Fianso 2026-10-23), converted for HdBody: game_scale 0.5 (1 sprite px = 0.5 room px), _mg renamed _machinegun, idle and dead stills added. Source: art/hd-characters/pixel-v1/set/pixel_anims.json.",
+ "anims": {
+  "blood_pool": {
+   "file": "blood_pool_10f.png",
+   "frames": 10,
+   "cell_w": 108,
+   "cell_h": 107,
+   "fps": 8,
+   "loop": false,
+   "pivot": [
+    54,
+    53
+   ],
+   "game_scale": 0.5
+  },
+  "blood_splat": {
+   "file": "blood_splat_4f.png",
+   "frames": 4,
+   "cell_w": 42,
+   "cell_h": 59,
+   "fps": 1,
+   "loop": false,
+   "pivot": [
+    20,
+    32
+   ],
+   "game_scale": 0.5
+  },
+  "blood_spurt": {
+   "file": "blood_spurt_6f.png",
+   "frames": 6,
+   "cell_w": 32,
+   "cell_h": 94,
+   "fps": 12,
+   "loop": false,
+   "pivot": [
+    16,
+    87
+   ],
+   "game_scale": 0.5
+  },
+  "dog_bite": {
+   "file": "dog_bite_11f.png",
+   "frames": 11,
+   "cell_w": 25,
+   "cell_h": 77,
+   "fps": 16,
+   "loop": false,
+   "pivot": [
+    12,
+    37
+   ],
+   "game_scale": 0.5
+  },
+  "dog_death": {
+   "file": "dog_death_23f.png",
+   "frames": 23,
+   "cell_w": 45,
+   "cell_h": 73,
+   "fps": 12,
+   "loop": false,
+   "pivot": [
+    21,
+    38
+   ],
+   "game_scale": 0.5
+  },
+  "dog_trot": {
+   "file": "dog_trot_12f.png",
+   "frames": 12,
+   "cell_w": 39,
+   "cell_h": 69,
+   "fps": 14,
+   "loop": true,
+   "pivot": [
+    19,
+    33
+   ],
+   "game_scale": 0.5
+  },
+  "enemy_death": {
+   "file": "enemy_death_23f.png",
+   "frames": 23,
+   "cell_w": 72,
+   "cell_h": 77,
+   "fps": 12,
+   "loop": false,
+   "pivot": [
+    34,
+    35
+   ],
+   "game_scale": 0.5
+  },
+  "enemy_machete": {
+   "file": "enemy_machete_12f.png",
+   "frames": 12,
+   "cell_w": 105,
+   "cell_h": 89,
+   "fps": 18,
+   "loop": false,
+   "pivot": [
+    55,
+    39
+   ],
+   "game_scale": 0.5
+  },
+  "enemy_machinegun": {
+   "file": "enemy_mg_3f.png",
+   "frames": 3,
+   "cell_w": 41,
+   "cell_h": 51,
+   "fps": 20,
+   "loop": false,
+   "pivot": [
+    20,
+    21
+   ],
+   "game_scale": 0.5
+  },
+  "enemy_pistol": {
+   "file": "enemy_pistol_3f.png",
+   "frames": 3,
+   "cell_w": 38,
+   "cell_h": 50,
+   "fps": 16,
+   "loop": false,
+   "pivot": [
+    18,
+    21
+   ],
+   "game_scale": 0.5
+  },
+  "enemy_punch": {
+   "file": "enemy_punch_4f.png",
+   "frames": 4,
+   "cell_w": 40,
+   "cell_h": 54,
+   "fps": 16,
+   "loop": false,
+   "pivot": [
+    19,
+    19
+   ],
+   "game_scale": 0.5
+  },
+  "enemy_shotgun": {
+   "file": "enemy_shotgun_3f.png",
+   "frames": 3,
+   "cell_w": 40,
+   "cell_h": 58,
+   "fps": 12,
+   "loop": false,
+   "pivot": [
+    20,
+    21
+   ],
+   "game_scale": 0.5
+  },
+  "enemy_walk": {
+   "file": "enemy_walk_12f.png",
+   "frames": 12,
+   "cell_w": 49,
+   "cell_h": 65,
+   "fps": 12,
+   "loop": true,
+   "pivot": [
+    24,
+    24
+   ],
+   "game_scale": 0.5
+  },
+  "hero_death": {
+   "file": "hero_death_23f.png",
+   "frames": 23,
+   "cell_w": 92,
+   "cell_h": 96,
+   "fps": 12,
+   "loop": false,
+   "pivot": [
+    44,
+    45
+   ],
+   "game_scale": 0.5
+  },
+  "hero_machete": {
+   "file": "hero_machete_9f.png",
+   "frames": 9,
+   "cell_w": 68,
+   "cell_h": 52,
+   "fps": 18,
+   "loop": false,
+   "pivot": [
+    30,
+    21
+   ],
+   "game_scale": 0.5
+  },
+  "hero_machinegun": {
+   "file": "hero_mg_3f.png",
+   "frames": 3,
+   "cell_w": 41,
+   "cell_h": 52,
+   "fps": 20,
+   "loop": false,
+   "pivot": [
+    20,
+    22
+   ],
+   "game_scale": 0.5
+  },
+  "hero_pistol": {
+   "file": "hero_pistol_3f.png",
+   "frames": 3,
+   "cell_w": 37,
+   "cell_h": 51,
+   "fps": 16,
+   "loop": false,
+   "pivot": [
+    18,
+    21
+   ],
+   "game_scale": 0.5
+  },
+  "hero_punch": {
+   "file": "hero_punch_4f.png",
+   "frames": 4,
+   "cell_w": 40,
+   "cell_h": 54,
+   "fps": 16,
+   "loop": false,
+   "pivot": [
+    19,
+    19
+   ],
+   "game_scale": 0.5
+  },
+  "hero_shotgun": {
+   "file": "hero_shotgun_3f.png",
+   "frames": 3,
+   "cell_w": 41,
+   "cell_h": 66,
+   "fps": 12,
+   "loop": false,
+   "pivot": [
+    21,
+    25
+   ],
+   "game_scale": 0.5
+  },
+  "hero_walk": {
+   "file": "hero_walk_12f.png",
+   "frames": 12,
+   "cell_w": 51,
+   "cell_h": 64,
+   "fps": 12,
+   "loop": true,
+   "pivot": [
+    25,
+    26
+   ],
+   "game_scale": 0.5
+  },
+  "hero_idle": {
+   "file": "hero_idle.png",
+   "frames": 1,
+   "cell_w": 51,
+   "cell_h": 64,
+   "fps": 1,
+   "loop": true,
+   "pivot": [
+    25,
+    26
+   ],
+   "game_scale": 0.5
+  },
+  "hero_dead": {
+   "file": "hero_dead.png",
+   "frames": 1,
+   "cell_w": 92,
+   "cell_h": 96,
+   "fps": 1,
+   "loop": true,
+   "pivot": [
+    44,
+    45
+   ],
+   "game_scale": 0.5
+  },
+  "enemy_idle": {
+   "file": "enemy_idle.png",
+   "frames": 1,
+   "cell_w": 49,
+   "cell_h": 65,
+   "fps": 1,
+   "loop": true,
+   "pivot": [
+    24,
+    24
+   ],
+   "game_scale": 0.5
+  },
+  "enemy_dead": {
+   "file": "enemy_dead.png",
+   "frames": 1,
+   "cell_w": 72,
+   "cell_h": 77,
+   "fps": 1,
+   "loop": true,
+   "pivot": [
+    34,
+    35
+   ],
+   "game_scale": 0.5
+  },
+  "dog_idle": {
+   "file": "dog_idle.png",
+   "frames": 1,
+   "cell_w": 39,
+   "cell_h": 69,
+   "fps": 1,
+   "loop": true,
+   "pivot": [
+    19,
+    33
+   ],
+   "game_scale": 0.5
+  },
+  "dog_dead": {
+   "file": "dog_dead.png",
+   "frames": 1,
+   "cell_w": 45,
+   "cell_h": 73,
+   "fps": 1,
+   "loop": true,
+   "pivot": [
+    21,
+    38
+   ],
+   "game_scale": 0.5
+  }
+ }
+}

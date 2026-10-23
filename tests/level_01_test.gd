@@ -46,7 +46,7 @@ func _initialize() -> void:
 	check(sofa_node.position.y == sofa.sort_y and sofa_node.position.y + sofa_node.offset.y == sofa.y, "furniture stands at its base, so whoever is lower down is drawn in front")
 	var box := Rect2(sofa.collision[0], sofa.collision[1], sofa.collision[2], sofa.collision[3])
 	check(blocks.call(box.get_center(), 1) and not blocks.call(Vector2(sofa.x + 2, sofa.y + 2), 1), "bullets stop at the sofa's seat, not at the top of its back")
-	check(blocks.call(Vector2(sofa.x + 2, sofa.y + 2), 64) and blocks.call(Vector2(sofa.x + sofa.w / 2.0, sofa.y - 2), 64) and player.collision_mask & 64 != 0, "people keep clear of the whole sofa, back included (their picture never covers it)")
+	check(blocks.call(Vector2(sofa.x + 2, sofa.y + 2), 64) and blocks.call(Vector2(sofa.x + sofa.w / 2.0, sofa.y + 1), 64) and player.collision_mask & 64 != 0, "people keep clear of the whole sofa, back included (their picture never covers it)")
 	check(not map.y_sort_enabled and sofa_node.get_parent().name == "Furniture" and player.get_index() > map.get_index(), "people are drawn on top of furniture, never under it")
 	var dog_k = root.get_tree().get_nodes_in_group("enemies").filter(func(e): return e.is_dog)[0]
 	var people_k = root.get_tree().get_nodes_in_group("enemies").filter(func(e): return not e.is_dog)

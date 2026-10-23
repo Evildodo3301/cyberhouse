@@ -172,6 +172,7 @@ func _ready() -> void:
 		_hd.setup(hd_character, outline_color)
 		add_child(_hd)
 		move_child(_hd, 0)   # under the muzzle fire and the crosshair
+		_hd.fit_collision()
 	elif torso_sheet and legs_sheet:
 		_legs_sprite = _make_sprite(legs_sheet)
 		_legs.add_child(_legs_sprite)

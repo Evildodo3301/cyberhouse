@@ -142,7 +142,14 @@ const WATER_LAYER := 32
 ## piece's drawing, on its own layer, keeps the picture off the furniture
 ## (Fianso: furniture never overlaps people). Bullets, eyes and dogs ignore it.
 const KEEP_OUT_LAYER := 64
-const KEEP_OUT := 3.0
+## Picture levels: the drawn walls have a trim band on the room side that
+## the "#" tiles don't cover. A strip this wide along every wall face, on its
+## own layer, keeps people's and dogs' pictures off it (Fianso: the dog's
+## nose went into the wall). Bullets ignore it. Door jambs get none, so
+## doorways stay as wide as they are.
+const WALL_TRIM_LAYER := 128
+const WALL_TRIM := 6.0
+const KEEP_OUT := 1.0
 ## Floor tiles in the interiors sheet. Rooms take turns: wood, brick, wood...
 const WOOD_TILES := [Rect2(96, 48, 16, 16), Rect2(112, 48, 16, 16)]
 const BRICK_TILES := [Rect2(48, 32, 16, 16), Rect2(48, 48, 16, 16)]
@@ -390,6 +397,9 @@ func _build_walls() -> void:
 			add_child(body)
 
 
+	if picture != null:
+		_build_wall_trim()
+
 	# The edge of the map: an invisible wall all round, for maps whose
 	# outdoor floor runs right up to the edge.
 	for edge in [Rect2(-tile_px, -tile_px, size_px.x + tile_px * 2, tile_px), Rect2(-tile_px, size_px.y, size_px.x + tile_px * 2, tile_px),
@@ -404,6 +414,56 @@ func _build_walls() -> void:
 		border_shape.shape = border_rect
 		border.add_child(border_shape)
 		add_child(border)
+
+
+## The strips along the wall faces (WALL_TRIM), merged into runs.
+func _build_wall_trim() -> void:
+	var walkable := func(at: Vector2i) -> bool: return not tile(at) in ["#", " ", "D", "d", "~", ""]
+	for side in [Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT]:
+		var along := Vector2i(1, 0) if side.y != 0 else Vector2i(0, 1)
+		var lines := _rows.size() if side.y != 0 else _width()
+		var length := _width() if side.y != 0 else _rows.size()
+		for line in lines:
+			var i := 0
+			while i < length:
+				var at := along * i + Vector2i(along.y, along.x) * line
+				if not (tile(at) == "#" and walkable.call(at + side)):
+					i += 1
+					continue
+				var start := at
+				var count := 0
+				while i < length:
+					at = along * i + Vector2i(along.y, along.x) * line
+					if not (tile(at) == "#" and walkable.call(at + side)):
+						break
+					count += 1
+					i += 1
+				var face := Rect2(Vector2(start) * tile_px, Vector2(along * count) * tile_px + Vector2(along.y, along.x) * tile_px)
+				var strip: Rect2
+				match side:
+					Vector2i.UP: strip = Rect2(face.position - Vector2(0, WALL_TRIM), Vector2(face.size.x, WALL_TRIM))
+					Vector2i.DOWN: strip = Rect2(face.position + Vector2(0, tile_px), Vector2(face.size.x, WALL_TRIM))
+					Vector2i.LEFT: strip = Rect2(face.position - Vector2(WALL_TRIM, 0), Vector2(WALL_TRIM, face.size.y))
+					_: strip = Rect2(face.position + Vector2(tile_px, 0), Vector2(WALL_TRIM, face.size.y))
+				var body := StaticBody2D.new()
+				body.name = "WallTrim"
+				body.collision_layer = WALL_TRIM_LAYER
+				body.collision_mask = 0
+				body.add_to_group("nav_walls")
+				body.position = strip.get_center()
+				var shape := CollisionShape2D.new()
+				var rectangle := RectangleShape2D.new()
+				rectangle.size = strip.size
+				shape.shape = rectangle
+				body.add_child(shape)
+				add_child(body)
+
+
+func _width() -> int:
+	var width := 0
+	for row in _rows:
+		width = maxi(width, row.length())
+	return width
 
 
 ## Gang rugs and doormats, flat on the floor under the blood and furniture.
@@ -892,9 +952,9 @@ func _build_navigation() -> void:
 	nav_polygon.add_outline(PackedVector2Array([
 		Vector2.ZERO, Vector2(size_px.x, 0), size_px, Vector2(0, size_px.y),
 	]))
-	nav_polygon.agent_radius = 8.0
+	nav_polygon.agent_radius = 8.0   # half a person's width (HdBody.BODY_SHAPES), plus a little
 	nav_polygon.parsed_geometry_type = NavigationPolygon.PARSED_GEOMETRY_STATIC_COLLIDERS
-	nav_polygon.parsed_collision_mask = 1 | WATER_LAYER | KEEP_OUT_LAYER
+	nav_polygon.parsed_collision_mask = 1 | WATER_LAYER | KEEP_OUT_LAYER | WALL_TRIM_LAYER
 	nav_polygon.source_geometry_mode = NavigationPolygon.SOURCE_GEOMETRY_GROUPS_WITH_CHILDREN
 	nav_polygon.source_geometry_group_name = &"nav_walls"
 	var region := NavigationRegion2D.new()

@@ -1,31 +1,33 @@
 class_name HdBody
 extends Sprite2D
-## A character drawn with the Art Director's HD frames (hero, suit enemy,
-## doberman). One sprite shows the whole body; the owner picks the
-## animation and frame and turns it to face the aim.
+## A character drawn with the Art Director's pixel-art frames (set B: hero,
+## suit enemy, doberman; strict top-down). One sprite shows the whole body;
+## the owner picks the animation and frame and turns it to face the aim.
 ##
-## The frames all face DOWN, each animation has its own sheet, cell size,
-## scale and rotation centre (pivot): see assets/characters/hd/hd_anims.json.
-## The sheets' pivot is the head for people, but these are high-angle
-## frames: the body reaches about 30 px out in front of the head. Turning
-## around the head would draw most of him ahead of where he really is (his
-## hitbox), into furniture and walls. So people turn around the middle of
-## the body instead: BODY_FORWARD px in front of the head. The dog already
-## turns around its middle.
+## The frames all face DOWN, each animation has its own sheet, cell size and
+## rotation centre (pivot, the middle of the body): see
+## assets/characters/pixel/pixel_anims.json. 1 sprite pixel = 0.5 room pixel
+## (game_scale), drawn with no smoothing so it stays pixel art.
 
-## The sheets' game_scale assumes one screen pixel per room pixel, but the
-## camera zooms in 3x. This makes people the old size in the room (about
-## 16 px across the shoulders, the dog about 22 px long): Fianso wants
-## normal people in big rooms. 0.614 would be 1.5x (option D, tried and
-## dropped). Change this one number to resize every HD character.
-static var room_scale := 0.409
-## Extra size per character on top of room_scale. The dog's frames come out
-## 0.75 m long next to a person; a doberman is about 1.1 m (QA's size check).
-const CHARACTER_SIZE := {"dog": 1.47}
-## How far in front of the head the middle of a person's body is, in room px
-## at room_scale 0.614 (it shrinks and grows with the body: 8 px now).
-const BODY_FORWARD := 12.0
-const ANIMS_FILE := "res://assets/characters/hd/hd_anims.json"
+## Resize every character at once (1 = the Art Director's 0.5 rule). 2/3
+## makes one sprite pixel exactly one screen pixel at the 3x camera, so the
+## pixel art stays crisp, and people are the size the houses were built for
+## (about 0.5 m across; Fianso: normal people in big rooms).
+static var room_scale := 2.0 / 3.0
+## Extra size per character on top of room_scale: the doberman stays at the
+## Art Director's 1.1 m.
+const CHARACTER_SIZE := {"dog": 1.5}
+## Each character's body for collisions, fitted to the outline of its idle,
+## walk and gun frames so the picture never pokes into a wall or furniture
+## (Fianso): [half width, length, how far the middle sits in front of the
+## pivot], room px at the Art Director's size (times size()). It's a capsule
+## that turns with the picture (face()).
+const BODY_SHAPES := {
+	"hero": [11.0, 29.0, 3.5],
+	"enemy": [12.0, 37.0, 1.5],
+	"dog": [9.5, 34.0, 0.75],
+}
+const ANIMS_FILE := "res://assets/characters/pixel/pixel_anims.json"
 const OUTLINE := preload("res://shaders/outline.gdshader")
 const IMPLANT_CODE := preload("res://shaders/implant_code.gdshader")
 
@@ -42,14 +44,14 @@ var current: String = ""
 func setup(character: String, outline := Color.TRANSPARENT, code := false) -> void:
 	who = character
 	centered = true
-	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST   # pixel art: no smoothing
 	var material := ShaderMaterial.new()
 	if code:
 		material.shader = IMPLANT_CODE
 	elif outline.a > 0.0:
 		material.shader = OUTLINE
 		material.set_shader_parameter("outline_color", outline)
-		material.set_shader_parameter("width", 3.0)   # sheet pixels: a little under one room pixel
+		material.set_shader_parameter("width", 1.0)   # one sheet pixel
 	if code:
 		material.set_shader_parameter("glyphs", preload("res://assets/characters/hd/implant_glyphs.png"))
 	if material.shader:
@@ -94,13 +96,11 @@ func show_anim(anim: String, index: int) -> void:
 		current = name
 		texture = _texture(info.file)
 		hframes = int(info.frames)
-		scale = Vector2.ONE * float(info.game_scale) * room_scale * CHARACTER_SIZE.get(who, 1.0)
+		scale = Vector2.ONE * float(info.game_scale) * size()
 		var cell := Vector2(info.cell_w, info.cell_h)
 		offset = cell / 2.0 - Vector2(info.pivot[0], info.pivot[1])
-		if who != "dog":
-			offset.y -= BODY_FORWARD * room_scale / 0.614 / scale.y   # the frames face down: forward is +y
 		if material is ShaderMaterial and material.shader == IMPLANT_CODE:
-			material.set_shader_parameter("game_scale", float(info.game_scale) * room_scale * CHARACTER_SIZE.get(who, 1.0))
+			material.set_shader_parameter("game_scale", 1.0)   # glyphs in sprite pixels: as crisp as the pixel art
 	frame = clampi(index, 0, hframes - 1)
 
 
@@ -120,13 +120,40 @@ static func held_blade_points(weapon: WeaponData, transform: Transform2D, rect: 
 	var line := BladeShine.blade_line(weapon.floor_texture, 1, 0)
 	if line.is_empty():
 		return []
-	var size := weapon.floor_texture.get_size()
-	return line.map(func(p: Vector2): return transform * (rect.position + (p + size / 2.0) * rect.size / size))
+	var tex_size := weapon.floor_texture.get_size()
+	return line.map(func(p: Vector2): return transform * (rect.position + (p + tex_size / 2.0) * rect.size / tex_size))
 
 
-## Turn to face `direction` (the frames face down).
+## Turn to face `direction` (the frames face down). The owner's collision
+## body turns with the picture.
 func face(direction: Vector2) -> void:
 	rotation = direction.angle() - PI * 0.5
+	var body := _body_shape()
+	if body:
+		body.rotation = rotation
+		body.position = direction.normalized() * float(BODY_SHAPES[who][2]) * size() if direction != Vector2.ZERO else body.position
+
+
+## Gives the owner (the player or an enemy) a collision body the shape of
+## this character's picture (BODY_SHAPES).
+func fit_collision() -> void:
+	var body := _body_shape()
+	if body == null or not BODY_SHAPES.has(who):
+		return
+	var capsule := CapsuleShape2D.new()
+	capsule.radius = BODY_SHAPES[who][0] * size()
+	capsule.height = BODY_SHAPES[who][1] * size()
+	body.shape = capsule
+	face(Vector2.DOWN)
+
+
+## How much bigger than the Art Director's size this character is drawn.
+func size() -> float:
+	return room_scale * CHARACTER_SIZE.get(who, 1.0)
+
+
+func _body_shape() -> CollisionShape2D:
+	return get_parent().get_node_or_null("CollisionShape2D") as CollisionShape2D if get_parent() else null
 
 
 func _info(anim: String) -> Dictionary:

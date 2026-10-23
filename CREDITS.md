@@ -27,6 +27,11 @@
   can't be copyrighted; stores may ask for AI disclosure). The player's
   attack-arm frames are recoloured to match.
 
+- **Pixel characters, set B** (`assets/characters/pixel/`): the hero, the
+  suit enemy and the doberman, strict top-down pixel art made by the Art
+  Director from Higgsfield output (AI stills, poses and motion), keyed and
+  pixelated. Approved by Fianso 2026-10-23. AI-generated: declare in the
+  stores' AI disclosure.
 - **HD characters** (`assets/characters/hd/`): the hero, the suit enemy
   and the cyber doberman, made by the Art Director with Higgsfield (GPT
   Image 2.5 and Grok Video 1.5) from Fianso's own AI reference sheets.

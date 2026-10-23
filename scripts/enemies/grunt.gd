@@ -179,6 +179,7 @@ func _ready() -> void:
 		_hd.name = "HdBody"
 		_hd.setup(look, Color.TRANSPARENT, look == "enemy")
 		add_child(_hd)
+		_hd.fit_collision()
 	elif sheet:
 		_sprite = Sprite2D.new()
 		_sprite.texture = sheet
