@@ -158,7 +158,15 @@ func _initialize() -> void:
 	await wait_frames(30)
 	var dropped := root.get_tree().get_nodes_in_group("pickups").filter(func(p): return p.weapon.id == &"machete" and p.global_position.distance_to(player.global_position) < 40.0)
 	var toss: float = dropped[0].global_position.distance_to(player.global_position) if dropped.size() == 1 else 0.0
-	check(dropped.size() == 1 and toss > 18.0, "the machete you held is tossed about a metre away (%.0f px)" % toss)
+	var clear := false
+	if dropped.size() == 1:
+		var query := PhysicsShapeQueryParameters2D.new()
+		query.shape = CircleShape2D.new()
+		query.shape.radius = dropped[0]._half_length()
+		query.transform = Transform2D(0.0, dropped[0].global_position)
+		query.collision_mask = 1 | 16
+		clear = player.get_world_2d().direct_space_state.intersect_shape(query, 1).is_empty()
+	check(dropped.size() == 1 and toss > 4.0 and clear, "the machete you held is tossed aside, all of it clear of walls and furniture (%.0f px)" % toss)
 	check(player.weapon.id == &"pistol", "it isn't picked straight back up")
 	# A machete thug drops his machete.
 	var thug = enemies.filter(func(e): return e.carried_weapon and e.carried_weapon.id == &"machete")[0]
