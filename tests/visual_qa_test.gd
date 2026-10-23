@@ -347,10 +347,10 @@ func check_level(path: String, rendering: bool) -> void:
 				wall[y * size.x + x] = 2
 	var near_wall := dilate(wall, size, 40)
 	await check_walls("a person walking", player, reach, body_masks(player.get_node_or_null("HdBody"), MOVE_ANIMS), wall, near_wall, size, map, path, rendering, player_blocked)
-	await check_walls("a person attacking", player, reach, body_masks(player.get_node_or_null("HdBody"), ATTACK_ANIMS), wall, near_wall, size, map, path, rendering, player_blocked)
+	await check_walls("a person attacking", player, reach, body_masks(player.get_node_or_null("HdBody"), ATTACK_ANIMS), wall, near_wall, size, map, path, rendering, player_blocked, true)
 	if not dogs.is_empty():
 		await check_walls("the dog walking", dogs[0], dog_reach, body_masks(dogs[0].get_node_or_null("HdBody"), MOVE_ANIMS), wall, near_wall, size, map, path, rendering, dog_blocked)
-		await check_walls("the dog biting", dogs[0], dog_reach, body_masks(dogs[0].get_node_or_null("HdBody"), ATTACK_ANIMS), wall, near_wall, size, map, path, rendering, dog_blocked)
+		await check_walls("the dog biting", dogs[0], dog_reach, body_masks(dogs[0].get_node_or_null("HdBody"), ATTACK_ANIMS), wall, near_wall, size, map, path, rendering, dog_blocked, true)
 
 	# --- 7. Pixel size: characters and rooms drawn with pixels the same size ---
 	var room_texel := 1.0   # room px per texel of the floor picture / furniture
@@ -748,10 +748,16 @@ func dilate(grid: PackedByteArray, size: Vector2i, radius: int) -> PackedByteArr
 
 ## Sweeps a body over every spot it can reach and fails if, in some pose and
 ## direction, more than WALL_LIMIT of its pixels land on a wall or outside.
-func check_walls(label: String, who: Node2D, reach: Dictionary, masks: Array, wall: PackedByteArray, near_wall: PackedByteArray, size: Vector2i, map: Node2D, path: String, rendering: bool, blocked: Array = []) -> void:
+## Walls are drawn over the characters, so for a quick attack (`attack`) a
+## blade or barrel tucked behind a wall is only a warning; what fails is a
+## pixel that comes out on the far side of the wall (it shows through).
+func check_walls(label: String, who: Node2D, reach: Dictionary, masks: Array, wall: PackedByteArray, near_wall: PackedByteArray, size: Vector2i, map: Node2D, path: String, rendering: bool, blocked: Array = [], attack := false) -> void:
 	var worst := 0
 	var worst_at := Vector2.ZERO
 	var worst_facing := Vector2.DOWN
+	var through_worst := 0
+	var through_at := Vector2.ZERO
+	var through_facing := Vector2.DOWN
 	var spots := 0
 	var pool_worst := 0
 	var seen := {}   # wall tile -> true, to count places, not pixels
@@ -776,15 +782,44 @@ func check_walls(label: String, who: Node2D, reach: Dictionary, masks: Array, wa
 			pool_worst = maxi(pool_worst, n_pool)
 			if n > WALL_LIMIT:
 				seen[Vector2i(p) / int(map.tile_px * 4)] = true
+				if attack:
+					var through := through_wall(p, masks[f], wall, size)
+					if through > through_worst:
+						through_worst = through
+						through_at = Vector2(p)
+						through_facing = Vector2.DOWN.rotated(TAU * f / masks.size())
 			if n > worst:
 				worst = n
 				worst_at = Vector2(p)
 				worst_facing = Vector2.DOWN.rotated(TAU * f / masks.size())
 	spots = seen.size()
-	check(worst <= WALL_LIMIT, "%s is never drawn into a wall, in any pose or direction (worst: %d px at %s facing %s, in about %d places)" % [label, worst, worst_at, compass(worst_facing), spots])
+	if attack:
+		check(worst <= WALL_LIMIT, "%s is cut off by a wall only briefly (the wall is drawn over it; worst: %d px at %s facing %s, in about %d places)" % [label, worst, worst_at, compass(worst_facing), spots], true)
+		check(through_worst <= WALL_LIMIT, "%s never pokes through to the far side of a wall (worst: %d px at %s facing %s)" % [label, through_worst, through_at, compass(through_facing)])
+	else:
+		check(worst <= WALL_LIMIT, "%s is never drawn into a wall, in any pose or direction (worst: %d px at %s facing %s, in about %d places)" % [label, worst, worst_at, compass(worst_facing), spots])
 	check(pool_worst <= WALL_LIMIT, "%s is never drawn over the pool (worst %d px)" % [label, pool_worst], true)
-	if worst > WALL_LIMIT and rendering:
-		await snapshot(null, who, worst_at, worst_facing, "%s_%s_into_wall" % [path.get_file().get_basename(), label.replace(" ", "_")])
+	if rendering and (through_worst > WALL_LIMIT or (worst > WALL_LIMIT and not attack)):
+		var at := through_at if attack else worst_at
+		var facing := through_facing if attack else worst_facing
+		await snapshot(null, who, at, facing, "%s_%s_into_wall" % [path.get_file().get_basename(), label.replace(" ", "_")])
+
+
+## How many of the body's pixels at `p` sit on open floor with a wall between
+## them and the body's centre: the bit that shows on the other side.
+func through_wall(p: Vector2i, mask: Array, wall: PackedByteArray, size: Vector2i) -> int:
+	var n := 0
+	for m in mask:
+		var q: Vector2i = p + m
+		if q.x < 0 or q.y < 0 or q.x >= size.x or q.y >= size.y or wall[q.y * size.x + q.x] == 1:
+			continue
+		var steps := maxi(absi(m.x), absi(m.y))
+		for k in range(1, steps):
+			var r := Vector2i((Vector2(p) + Vector2(m) * k / steps).round())
+			if wall[r.y * size.x + r.x] == 1:
+				n += 1
+				break
+	return n
 
 
 ## Puts the player at `at`, renders, and saves a close-up.
