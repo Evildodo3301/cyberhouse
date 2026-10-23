@@ -75,7 +75,7 @@ for name, a in sorted(anims.items()):
     rare = [c for c, n in colours.items() if n <= 2]
     if len(rare) > 3:
         warns.append(f"{name}: {len(colours)} colours, {len(rare)} used only once or twice (possible stray colours)")
-    centres, widths = [], []
+    centres, widths, head_centres = [], [], []
     for i, cell in enumerate(cells):
         pts = opaque(cell)
         if not pts:
@@ -83,8 +83,9 @@ for name, a in sorted(anims.items()):
             continue
         xs = [p[0] for p in pts]
         ys = [p[1] for p in pts]
-        if min(xs) == 0 or min(ys) == 0 or max(xs) == a["cell_w"] - 1 or max(ys) == a["cell_h"] - 1:
-            fails.append(f"{name} frame {i}: touches the cell edge (may be cut off)")
+        edges = [side for side, hit in (("left", min(xs) == 0), ("top", min(ys) == 0), ("right", max(xs) == a["cell_w"] - 1), ("bottom", max(ys) == a["cell_h"] - 1)) if hit]
+        if edges:
+            fails.append(f"{name} frame {i}: touches the cell edge ({', '.join(edges)}), may be cut off")
         lonely = [p for p in pts if not any((p[0] + dx, p[1] + dy) in pts for dx in (-1, 0, 1) for dy in (-1, 0, 1) if dx or dy)]
         if lonely:
             warns.append(f"{name} frame {i}: {len(lonely)} lonely pixel(s) at {lonely[:4]}")
@@ -94,12 +95,20 @@ for name, a in sorted(anims.items()):
             px = cell.load()
             head = biggest_blob([p for p in pts if is_head(who, px[p])])
             if len(head) > 8:
-                hx = [p[0] for p in head]
+                # Top 60% of the blob only, so fists held up by the face don't count.
+                top = min(p[1] for p in head)
+                cut = top + 0.6 * (max(p[1] for p in head) - top)
+                hx = [p[0] for p in head if p[1] <= cut]
                 heads.setdefault(who, {}).setdefault(name, []).append(max(hx) - min(hx) + 1)
+                head_centres.append((sum(p[0] for p in head) / len(head), sum(p[1] for p in head) / len(head)))
     if a.get("loop") and len(centres) > 1:
-        jump = max(((centres[i][0] - centres[i - 1][0]) ** 2 + (centres[i][1] - centres[i - 1][1]) ** 2) ** 0.5 for i in range(len(centres)))
+        # People: the head should stay steady (arms and legs swing). Others: the whole body.
+        track = head_centres if len(head_centres) == len(centres) else centres
+        jump = max(((track[i][0] - track[i - 1][0]) ** 2 + (track[i][1] - track[i - 1][1]) ** 2) ** 0.5 for i in range(len(track)))
         room = jump * ROOM_PER_SPRITE_PX
-        (warns if room > 1.0 else []).append(f"{name}: body jumps {room:.1f} room px between frames in the loop")
+        part = "head" if track is head_centres else "body"
+        (warns if room > 1.0 else []).append(f"{name}: {part} jumps {room:.1f} room px between frames in the loop")
+        print(f"{name}: {part} moves at most {room:.1f} room px between loop frames")
     if centres and not name.startswith("blood"):
         cx = sum(c[0] for c in centres) / len(centres)
         cy = sum(c[1] for c in centres) / len(centres)
@@ -114,8 +123,9 @@ for who, sheets in heads.items():
     base = med.get(f"{who}_walk") or med.get(f"{who}_idle")
     for n, m in med.items():
         print(f"  {n:16s} {m:3d}" + ("" if not base else f"  ({100 * m / base:.0f}% of walking)"))
+        # Shading at the head's edge makes this rough: over 25% fails, 15-25% is for a look by eye.
         if base and "death" not in n and abs(m / base - 1) > 0.15:
-            fails.append(f"{n}: head is {100 * m / base:.0f}% the size of the walking head")
+            (fails if abs(m / base - 1) > 0.25 else warns).append(f"{n}: head is {100 * m / base:.0f}% the size of the walking head")
 
 for who in ("hero", "enemy"):
     _, cells = frames(f"{who}_walk")
