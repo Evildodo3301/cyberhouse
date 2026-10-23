@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://c53d6d0ti0g6s"
-path="res://.godot/imported/dog_paw.png-ee85bf86629e1b9fae0a743f152f3800.ctex"
+uid="uid://cvm05rk8whxo0"
+path="res://.godot/imported/dog_dead3.png-385ed24146af0f022f53c6f6f8aaa007.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/characters/pixel/dog_paw.png"
-dest_files=["res://.godot/imported/dog_paw.png-ee85bf86629e1b9fae0a743f152f3800.ctex"]
+source_file="res://assets/characters/pixel/dog_dead3.png"
+dest_files=["res://.godot/imported/dog_dead3.png-385ed24146af0f022f53c6f6f8aaa007.ctex"]
 
 [params]
 

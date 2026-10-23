@@ -100,11 +100,108 @@ func add_kill(at: Vector2, direction: Vector2, body_color: Color, weapon: String
 	dying.gore = self
 	dying.at = stamp.at
 	dying.direction = stamp.direction
+	dying.hit_direction = stamp.direction
+	if corpse.has("pixel"):
+		corpse = corpse.duplicate()
+		var fit := fit_corpse(at, stamp.direction, corpse)
+		dying.at = to_local(fit[0])
+		dying.direction = fit[1]
+		corpse.variant = fit[2]
 	dying.body_color = body_color
 	dying.corpse = corpse
 	dying.gory = weapon != "melee" and full
 	dying.blood_level = Game.blood_level
 	add_child(dying)
+
+
+## What a lying body may never be drawn over (Fianso): walls and the strip
+## along them, and furniture (its whole drawn shape, tables included).
+const CORPSE_BLOCKERS := 1 | 128 | 64 | 256
+## Turns tried away from the hit direction, and how far the body may slide.
+const FIT_TURNS := [0.0, 0.5, -0.5, 1.0, -1.0, 1.6, -1.6, 2.4, -2.4, PI]
+const FIT_SLIDES := [0.0, 4.0, 8.0, 12.0, 16.0]
+static var _pose_points: Dictionary = {}   # anim name -> PackedVector2Array
+
+
+## Where and how a pixel body lies so that no part of it, in any frame of
+## its death or its dead pose, covers a wall or furniture: the hit direction
+## and its own pose first, then other poses, a little turned, then slid out
+## a few px. Returns [position (global), head direction, variant].
+func fit_corpse(at: Vector2, direction: Vector2, corpse: Dictionary) -> Array:
+	var who: String = corpse.pixel
+	var size := float(corpse.get("size", 1.0))
+	var variants: Array = [corpse.get("variant", "")]
+	for n in ["", "2", "3", "4"]:
+		if not variants.has(n) and not HdBody.info_of(who + "_death" + n).is_empty():
+			variants.append(n)
+	var space := get_world_2d().direct_space_state
+	var query := PhysicsPointQueryParameters2D.new()
+	query.collision_mask = CORPSE_BLOCKERS
+	var best := [at, direction, variants[0]]
+	var best_hits := 1 << 30
+	for slide in FIT_SLIDES:
+		for turn in FIT_TURNS:
+			var heading := direction.rotated(turn)
+			for variant in variants:
+				var points := pose_points(who + "_death" + variant, who + "_dead" + variant)
+				for shift in ([Vector2.ZERO] if slide == 0.0 else _ring(slide)):
+					var hits := 0
+					var placed: Vector2 = at + shift
+					var turn_by := heading.angle() + PI * 0.5
+					for point in points:
+						query.position = placed + (point * size).rotated(turn_by)
+						if not space.intersect_point(query, 1).is_empty():
+							hits += 1
+							if hits >= best_hits:
+								break
+					if hits == 0:
+						return [placed, heading, variant]
+					if hits < best_hits:
+						best_hits = hits
+						best = [placed, heading, variant]
+	return best
+
+
+## Eight spots `distance` px around (0, 0).
+static func _ring(distance: float) -> Array:
+	var spots := []
+	for i in 8:
+		spots.append(Vector2.from_angle(TAU * i / 8.0) * distance)
+	return spots
+
+
+## The drawn pixels of a death (every few frames) and its dead pose, as
+## points about 1 room px apart relative to the pivot, at size 1, outermost
+## first (so a misfit is found quickly).
+static func pose_points(death: String, dead: String) -> PackedVector2Array:
+	var key := death + "|" + dead
+	if _pose_points.has(key):
+		return _pose_points[key]
+	var seen := {}
+	for name in [death, dead]:
+		var info := HdBody.info_of(name)
+		if info.is_empty():
+			continue
+		var image: Image = HdBody._texture(info.file).get_image()
+		if image.is_compressed():
+			image.decompress()
+		var scale := float(info.game_scale)
+		var step := maxi(int(round(1.0 / scale)), 1)   # about 1 room px
+		var frames: Array = [0] if int(info.frames) == 1 else range(0, int(info.frames), 4) + [int(info.frames) - 1]
+		for f in frames:
+			for y in range(0, int(info.cell_h), step):
+				for x in range(0, int(info.cell_w), step):
+					if image.get_pixel(f * int(info.cell_w) + x, y).a < 0.5:
+						continue
+					var point := (Vector2(x, y) - Vector2(info.pivot[0], info.pivot[1])) * scale
+					seen[Vector2i(point.round())] = true
+	var list: Array = seen.keys()
+	list.sort_custom(func(a, b): return Vector2(a).length_squared() > Vector2(b).length_squared())
+	var points := PackedVector2Array()
+	for p in list:
+		points.append(Vector2(p))
+	_pose_points[key] = points
+	return points
 
 
 ## Blood drops from a spurt landing on the floor: [[position, size], ...].
@@ -275,25 +372,21 @@ func _pixel_dot(center: Vector2, radius: float, color: Color) -> void:
 		_painter.draw_rect(Rect2((center / BLOOD_PIXEL).floor() * BLOOD_PIXEL, Vector2.ONE * BLOOD_PIXEL), color)
 
 
-## One footprint: the Art Director's print for that walker (a left shoe or
-## a paw, toe down), tinted dark blood, mirrored for the right foot, turned
-## the way the walker went.
-const FOOTPRINTS := {
-	"hero": preload("res://assets/characters/pixel/hero_foot.png"),
-	"enemy": preload("res://assets/characters/pixel/enemy_foot.png"),
-	"dog": preload("res://assets/characters/pixel/dog_paw.png"),
-}
-
-
+## One footprint: the Art Director's red print for that walker (a left
+## shoe or a paw, toe down), in 4 stages from fresh (0) to faint (3) as the
+## blood wears off; mirrored for the right foot, turned the way the walker
+## went. `alpha` (BloodyFeet: how much blood is left) picks the stage, and
+## the last of it fades out.
 func _paint_footprint(stamp: Dictionary) -> void:
-	var color := dark_blood_color.lightened(0.15)
-	color.a = stamp.alpha
 	var kind: String = stamp.kind_of_foot
-	var texture: Texture2D = FOOTPRINTS.get(kind, FOOTPRINTS.hero)
-	var size := 1.0 / 3.0   # the Art Director's 1/3 rule: a shoe print is 24 px = 0.27 m
+	var info := HdBody.info_of("footprint_paw" if kind == "dog" else "footprint_shoe")
+	var stage := clampi(int((1.0 - stamp.alpha) * 4.0), 0, 3)
+	var cell := Vector2(info.cell_w, info.cell_h)
+	var size := float(info.game_scale)   # 1/3: a shoe print is 24 px = 0.27 m
 	var flip := 1.0 if stamp.left or kind == "dog" else -1.0
 	_painter.draw_set_transform(stamp.at, stamp.angle - PI * 0.5, Vector2(size * flip, size))
-	_painter.draw_texture(texture, -texture.get_size() / 2.0, color)
+	_painter.draw_texture_rect_region(HdBody._texture(info.file), Rect2(-Vector2(info.pivot[0], info.pivot[1]), cell),
+			Rect2(Vector2(cell.x * stage, 0), cell), Color(1, 1, 1, clampf(stamp.alpha * 2.0, 0.0, 1.0)))
 	_painter.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
@@ -303,7 +396,7 @@ static func draw_body(canvas: CanvasItem, at: Vector2, direction: Vector2, color
 	if corpse.get("torn", false):
 		_draw_torn(canvas, at, color)
 	elif corpse.has("pixel"):
-		HdBody.draw_frame(canvas, corpse.pixel + "_dead", 0, at, direction.angle() + PI * 0.5, float(corpse.get("size", 1.0)))
+		HdBody.draw_frame(canvas, corpse.pixel + "_dead" + corpse.get("variant", ""), 0, at, direction.angle() + PI * 0.5, float(corpse.get("size", 1.0)))
 	elif corpse.get("dog", false):
 		_draw_dog(canvas, at, direction, legs)
 	elif corpse.has("texture"):

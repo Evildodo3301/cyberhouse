@@ -998,7 +998,8 @@ func _make_sprite(texture: Texture2D) -> Sprite2D:
 ## The body the gore layer paints when you die: the template's "die" pose.
 func _corpse() -> Dictionary:
 	if _hd:
-		return {"pixel": _hd.who, "size": _hd.size()}   # the Art Director's death, then the dead pose
+		# The Art Director's death, then its dead pose: one of four, at random.
+		return {"pixel": _hd.who, "size": _hd.size(), "variant": HdBody.death_variant(_hd.who)}
 	if body_sheet == null:
 		return {}
 	var frame: int = 0 if body_sheet.get_width() <= 64 else DIE_FRAMES[1]
