@@ -14,9 +14,10 @@ extends Sprite2D
 ## pixel art stays crisp, and people are the size the houses were built for
 ## (about 0.5 m across; Fianso: normal people in big rooms).
 static var room_scale := 2.0 / 3.0
-## Characters with a fixed size, whatever room_scale says: the doberman
-## stays at the Art Director's 0.5 rule (1.1 m).
-const FIXED_SIZE := {"dog": 1.0}
+## Characters with a fixed size, whatever room_scale says (none now: the
+## doberman was re-rendered 1.5x finer, so it draws at 1/3 like people and
+## is still 1.1 m).
+const FIXED_SIZE := {}
 ## Each character's body for collisions, fitted to the outline of its idle,
 ## walk and gun frames so the picture never pokes into a wall or furniture
 ## (Fianso): [half width, length, how far the middle sits in front of the
@@ -25,7 +26,7 @@ const FIXED_SIZE := {"dog": 1.0}
 const BODY_SHAPES := {
 	"hero": [11.0, 29.0, 3.5],
 	"enemy": [12.0, 37.0, 1.5],
-	"dog": [9.5, 34.0, 0.75],
+	"dog": [14.25, 51.0, 1.125],   # the 1.5x sheets: 34 room px long at size 2/3
 }
 const ANIMS_FILE := "res://assets/characters/pixel/pixel_anims.json"
 const OUTLINE := preload("res://shaders/outline.gdshader")

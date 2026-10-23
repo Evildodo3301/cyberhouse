@@ -148,10 +148,12 @@ const LOW_KEEP_OUT_LAYER := 256
 ## Picture levels: the drawn walls have a trim band on the room side that
 ## the "#" tiles don't cover. A strip this wide along every wall face, on its
 ## own layer, keeps people's and dogs' pictures off it (Fianso: the dog's
-## nose went into the wall). Bullets ignore it. Door jambs get none, so
-## doorways stay as wide as they are.
+## nose went into the wall). Bullets ignore it. Door jambs get only a thin
+## one (JAMB_TRIM), so doorways stay almost as wide as they are, yet a swing
+## from the doorway can't poke its tip out past the end of the wall (QA).
 const WALL_TRIM_LAYER := 128
 const WALL_TRIM := 6.0
+const JAMB_TRIM := 2.0
 const KEEP_OUT := 1.0
 ## Floor tiles in the interiors sheet. Rooms take turns: wood, brick, wood...
 const WOOD_TILES := [Rect2(96, 48, 16, 16), Rect2(112, 48, 16, 16)]
@@ -426,7 +428,13 @@ func _build_walls() -> void:
 
 ## The strips along the wall faces (WALL_TRIM), merged into runs.
 func _build_wall_trim() -> void:
-	var walkable := func(at: Vector2i) -> bool: return not tile(at) in ["#", " ", "D", "d", "~", ""]
+	_build_trim(func(at: Vector2i) -> bool: return not tile(at) in ["#", " ", "D", "d", "~", ""], WALL_TRIM)
+	_build_trim(func(at: Vector2i) -> bool: return tile(at) in ["D", "d"], JAMB_TRIM)
+
+
+## Strips `thickness` wide along every wall face whose neighbour passes
+## passes `walkable`, merged into runs.
+func _build_trim(walkable: Callable, thickness: float) -> void:
 	for side in [Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT]:
 		var along := Vector2i(1, 0) if side.y != 0 else Vector2i(0, 1)
 		var lines := _rows.size() if side.y != 0 else _width()
@@ -449,10 +457,10 @@ func _build_wall_trim() -> void:
 				var face := Rect2(Vector2(start) * tile_px, Vector2(along * count) * tile_px + Vector2(along.y, along.x) * tile_px)
 				var strip: Rect2
 				match side:
-					Vector2i.UP: strip = Rect2(face.position - Vector2(0, WALL_TRIM), Vector2(face.size.x, WALL_TRIM))
-					Vector2i.DOWN: strip = Rect2(face.position + Vector2(0, tile_px), Vector2(face.size.x, WALL_TRIM))
-					Vector2i.LEFT: strip = Rect2(face.position - Vector2(WALL_TRIM, 0), Vector2(WALL_TRIM, face.size.y))
-					_: strip = Rect2(face.position + Vector2(tile_px, 0), Vector2(WALL_TRIM, face.size.y))
+					Vector2i.UP: strip = Rect2(face.position - Vector2(0, thickness), Vector2(face.size.x, thickness))
+					Vector2i.DOWN: strip = Rect2(face.position + Vector2(0, tile_px), Vector2(face.size.x, thickness))
+					Vector2i.LEFT: strip = Rect2(face.position - Vector2(thickness, 0), Vector2(thickness, face.size.y))
+					_: strip = Rect2(face.position + Vector2(tile_px, 0), Vector2(thickness, face.size.y))
 				var body := StaticBody2D.new()
 				body.name = "WallTrim"
 				body.collision_layer = WALL_TRIM_LAYER
