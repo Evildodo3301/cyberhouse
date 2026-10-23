@@ -114,7 +114,8 @@ var report: PackedStringArray = []
 var shots_dir := "user://visual_qa"
 var floor_like: PackedByteArray     # room pixel -> 1 if the top piece there looks like the floor
 var base_floor: Image               # picture levels: the floor drawing under the pieces
-var floor_texels := 1.0             # texels of base_floor per room px
+var floor_texels := 1.0
+var corpse_points := {}            # "hero2" -> drawn points of that death and dead pose, unturned             # texels of base_floor per room px
 
 
 func check(ok: bool, label: String, warn_only := false) -> void:
@@ -377,26 +378,50 @@ func check_level(path: String, rendering: bool) -> void:
 		await check_walls("the dog walking", dogs[0], dog_reach, body_masks(dogs[0].get_node_or_null("HdBody"), MOVE_ANIMS), wall, near_wall, size, map, path, rendering, dog_blocked)
 		await check_walls("the dog biting", dogs[0], dog_reach, body_masks(dogs[0].get_node_or_null("HdBody"), ATTACK_ANIMS), wall, near_wall, size, map, path, rendering, dog_blocked, true)
 
-	# --- 6b. Bodies: a corpse stays for good, so no part of it may lie in a
-	# wall (Fianso, 2026-10-23: a body lying over the wall). Every dead pose and
-	# death frame, turned every way, wherever someone can die. Enemies land
-	# CORPSE_SHOVE px along the hit (grunt.gd add_kill), the player where he stood.
+	# --- 6b. Bodies: a corpse stays for good, so no part of it, in any death
+	# frame or its dead pose, may cover a wall or furniture (Fianso,
+	# 2026-10-23). Kill people and dogs at spots by walls and furniture, let the
+	# game lay the body out (GoreLayer.fit_corpse) and look at every drawn pixel.
+	var gore = root.get_tree().get_first_node_in_group("gore")
+	var near_things := wall.duplicate()
+	for k in owner_of.size():
+		if owner_of[k] >= 0:
+			near_things[k] = 1
+	near_things = dilate(near_things, size, 24)
 	var corpse_cases := [["hero", reach, 0.0, "a dead hero"], ["enemy", reach, CORPSE_SHOVE, "a dead enemy"]]
 	if not dogs.is_empty():
 		corpse_cases.append(["dog", dog_reach, CORPSE_SHOVE, "a dead dog"])
 	for case in corpse_cases:
-		var masks := corpse_masks(case[0], case[2])
-		if masks.is_empty():
-			continue
-		await check_walls("%s (%d pose(s))" % [case[3], corpse_poses(case[0]).size()], player, case[1], masks, wall, near_wall, size, map, path, false)
-		if not pieces.is_empty() and case[0] != "dog":
-			# The gore layer is under the furniture: a body under a table is
-			# fine, half a body under a sofa or a cabinet is not.
-			var worst := sweep(case[1], masks, owner_of, size, pieces, false)
-			var bad := range(pieces.size()).filter(func(i): return worst[i].hidden > HIDDEN_LIMIT * 3 and not DOG_FITS_UNDER.any(func(k): return names[i].contains(k)))
-			check(bad.is_empty(), "%s never lies under a sofa, cabinet or other solid furniture (%d piece(s))" % [case[3], bad.size()], true)
-			for i in bad:
-				note("%s: up to %d px of %s under it at %s" % [names[i], worst[i].hidden, case[3], worst[i].hidden_at])
+		if gore == null or not gore.has_method("fit_corpse"):
+			note("no GoreLayer.fit_corpse on this map: bodies not checked")
+			break
+		var body := HdBody.new()
+		body.setup(case[0])
+		var corpse := {"pixel": case[0], "size": body.size()}
+		body.free()
+		var spots: Array = case[1].keys().filter(func(p): return near_things[p.y * size.x + p.x] and (p.x + p.y) % 8 == 0)
+		var worst_wall := 0
+		var worst_furniture := 0
+		var worst_at := Vector2.ZERO
+		var worst_dir := Vector2.DOWN
+		var worst_what := ""
+		var bad_spots := 0
+		for p in spots:
+			for turn in 4:
+				var dir := Vector2.DOWN.rotated(TAU * (turn + 0.5 * ((p.x / 8) % 2)) / 4.0)
+				var at: Vector2 = Vector2(p) + dir * case[2]
+				var fit: Array = gore.fit_corpse(at, dir, corpse)
+				var counts := corpse_hits(case[0], fit[2], fit[0], fit[1], float(corpse.size), wall, owner_of, size)
+				if counts[0] > WALL_LIMIT or counts[1] > WALL_LIMIT:
+					bad_spots += 1
+				if counts[0] + counts[1] > worst_wall + worst_furniture:
+					worst_wall = counts[0]
+					worst_furniture = counts[1]
+					worst_at = Vector2(p)
+					worst_dir = dir
+					worst_what = "death%s" % fit[2]
+		check(worst_wall <= WALL_LIMIT, "%s never lies over a wall, any death frame or dead pose (%d spots by walls and furniture, 4 hit directions each; worst %d px at %s hit %s, %s; %d bad)" % [case[3], spots.size(), worst_wall, worst_at, compass(worst_dir), worst_what, bad_spots])
+		check(worst_furniture <= WALL_LIMIT, "%s never lies over furniture (worst %d px at %s hit %s)" % [case[3], worst_furniture, worst_at, compass(worst_dir)])
 
 	# --- 7. Pixel size: characters and rooms drawn with pixels the same size ---
 	var room_texel := 1.0   # room px per texel of the floor picture / furniture
@@ -682,68 +707,47 @@ func body_masks(real: HdBody, anims: Array) -> Array:
 	return masks
 
 
-## Every picture a dead body can show: the dead poses ("hero_dead",
-## "hero_dead2", ...) and the death frames that end on them.
-func corpse_poses(who: String) -> Array:
-	var poses := []
-	for name in [who + "_dead"] + range(2, 9).map(func(k): return "%s_dead%d" % [who, k]):
-		if not HdBody.info_of(name).is_empty():
-			poses.append([name, 0])
-	for name in [who + "_death"] + range(2, 9).map(func(k): return "%s_death%d" % [who, k]):
-		var info := HdBody.info_of(name)
-		for i in int(info.get("frames", 0)):
-			poses.append([name, i])
-	return poses
-
-
-## The room pixels a corpse covers, for FACINGS headings, drawn the way
-## GoreLayer.draw_body draws it (pivot at the spot, turned to the heading).
-func corpse_masks(who: String, shove: float) -> Array:
-	var poses := corpse_poses(who)
-	if poses.is_empty():
-		return []
-	var body := HdBody.new()
-	body.setup(who)
-	var size := body.size()
-	body.free()
-	var points := []   # unturned, pivot at the origin
-	var seen_local := {}
-	for pose in poses:
-		var info := HdBody.info_of(pose[0])
-		var image: Image = load(HdBody.ANIMS_FILE.get_base_dir().path_join(info.file)).get_image()
-		if image.is_compressed():
-			image.decompress()
-		var scale := float(info.game_scale) * size
-		for y in range(0, int(info.cell_h), 2):
-			for x in range(0, int(info.cell_w), 2):
-				if image.get_pixel(int(info.cell_w) * pose[1] + x, y).a > 0.5:
-					var p := (Vector2(x, y) + Vector2.ONE - Vector2(info.pivot[0], info.pivot[1])) * scale
-					var key := Vector2i(p.round())
-					if not seen_local.has(key):
-						seen_local[key] = true
-						points.append(p)
-	var masks := []
-	for turn in FACINGS:
-		var heading := Vector2.DOWN.rotated(TAU * turn / FACINGS)
-		var xf := Transform2D(heading.angle() + PI * 0.5, heading * shove)
+## How many drawn pixels of a lying body (every frame of its death and its
+## dead pose, as the game draws them) land on [a wall, furniture art].
+func corpse_hits(who: String, variant: String, at: Vector2, heading: Vector2, size: float, wall: PackedByteArray, owner_of: PackedInt32Array, map_size: Vector2i) -> Array:
+	var key := who + variant
+	if not corpse_points.has(key):
 		var seen := {}
-		for p in points:
-			seen[Vector2i((xf * p).floor())] = true
-		masks.append(seen.keys())
-	return masks
-
+		for name in [who + "_death" + variant, who + "_dead" + variant]:
+			var info := HdBody.info_of(name)
+			if info.is_empty():
+				continue
+			var image: Image = load(HdBody.ANIMS_FILE.get_base_dir().path_join(info.file)).get_image()
+			if image.is_compressed():
+				image.decompress()
+			for f in int(info.frames):
+				for y in int(info.cell_h):
+					for x in int(info.cell_w):
+						if image.get_pixel(f * int(info.cell_w) + x, y).a >= 0.5:
+							seen[(Vector2(x, y) + Vector2(0.5, 0.5) - Vector2(info.pivot[0], info.pivot[1])) * float(info.game_scale)] = true
+		corpse_points[key] = seen.keys()
+	var on_wall := {}
+	var on_piece := {}
+	var turn := heading.angle() + PI * 0.5
+	for point in corpse_points[key]:
+		var q := Vector2i((at + (point * size).rotated(turn)).floor())
+		if q.x < 0 or q.y < 0 or q.x >= map_size.x or q.y >= map_size.y or wall[q.y * map_size.x + q.x] == 1:
+			on_wall[q] = true
+		elif owner_of[q.y * map_size.x + q.x] >= 0 and not floor_like[q.y * map_size.x + q.x]:
+			on_piece[q] = true
+	return [on_wall.size(), on_piece.size()]
 
 ## The thinnest wall between two floor pixels, straight across (rows and columns), in px.
 func thinnest_wall(wall: PackedByteArray, size: Vector2i) -> int:
 	var thin := 1000
 	for horizontal in [true, false]:
-		var lines := size.y if horizontal else size.x
-		var along := size.x if horizontal else size.y
+		var lines: int = size.y if horizontal else size.x
+		var along: int = size.x if horizontal else size.y
 		for a in lines:
 			var run := 0
 			var after_floor := false
 			for b in along:
-				var k := a * size.x + b if horizontal else b * size.x + a
+				var k: int = a * size.x + b if horizontal else b * size.x + a
 				if wall[k] == 1:
 					run += 1
 				else:
