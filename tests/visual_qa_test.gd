@@ -89,6 +89,7 @@ var report: PackedStringArray = []
 var shots_dir := "user://visual_qa"
 var floor_like: PackedByteArray     # room pixel -> 1 if the top piece there looks like the floor
 var base_floor: Image               # picture levels: the floor drawing under the pieces
+var floor_texels := 1.0             # texels of base_floor per room px
 
 
 func check(ok: bool, label: String, warn_only := false) -> void:
@@ -218,6 +219,7 @@ func check_level(path: String, rendering: bool) -> void:
 	base_floor = null
 	if map.picture:
 		base_floor = map.picture.get_image()
+		floor_texels = base_floor.get_width() / float(size.x)
 		if base_floor.is_compressed():
 			base_floor.decompress()
 	var names: Array[String] = []
@@ -439,11 +441,13 @@ func paint_piece(piece: Sprite2D, index: int, owner_of: PackedInt32Array, size: 
 			var colour := image.get_pixel(region.position.x + x, region.position.y + y)
 			if colour.a < 0.5:
 				continue
-			var p := Vector2i((xf * (corner + Vector2(x, y) + Vector2(0.5, 0.5))).floor())
+			var at := xf * (corner + Vector2(x, y) + Vector2(0.5, 0.5))
+			var p := Vector2i(at.floor())
 			var inside := p.x >= 0 and p.y >= 0 and p.x < size.x and p.y < size.y
 			var is_floor := false
-			if inside and base_floor and p.x < base_floor.get_width() and p.y < base_floor.get_height():
-				var under := base_floor.get_pixelv(p)
+			var under_at := Vector2i((at * floor_texels).floor())   # the floor drawing's texel under it
+			if inside and base_floor and under_at.x < base_floor.get_width() and under_at.y < base_floor.get_height():
+				var under := base_floor.get_pixelv(under_at)
 				is_floor = absf(under.r - colour.r) + absf(under.g - colour.g) + absf(under.b - colour.b) < 0.15
 			if not is_floor:
 				lo = lo.min(p)

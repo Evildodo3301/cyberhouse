@@ -24,6 +24,14 @@ const POOL_FULL := 13.0
 const POOL_REDUCED := 6.0
 ## Legs stop twitching after this long.
 const TWITCH_TIME := 2.6
+## Pixel bodies (corpse {"pixel": who}): the Art Director's pool spreads
+## over this long, then holds its last frame. REDUCED blood stops at frame 3.
+const POOL_TIME := 2.3
+const POOL_LAST := 9
+const POOL_LAST_REDUCED := 3
+## The pixel spurt: 6 frames (three beats, the third weaker), then a pause
+## of 2, over and over while the heart still pumps.
+const SPURT_STEPS := 8
 
 var gore: GoreLayer
 var at: Vector2               # where the body lies (gore layer coordinates)
@@ -42,12 +50,18 @@ var _pool_shape := PackedFloat32Array()   # 12 lumpy radius multipliers
 var _veins: Array[PackedVector2Array] = []
 var _spurt_angle: float
 var _twitch_seed: float
+var _pool_turn: float         # pixel pools are turned a quarter turn or so, so no two look alike
+static var _pool_radii: Array = []   # pixel pool: how far each frame reaches, at scale 1
 
 
 func _ready() -> void:
 	for i in 12:
 		_pool_shape.append(randf_range(0.65, 1.0))
-	_spurt_angle = direction.angle() + PI + randf_range(-0.9, 0.9)   # out of the wound, back the way the hit came
+	if is_pixel():
+		_spurt_angle = direction.angle() + randf_range(-0.6, 0.6)   # the Art Director's jet: away from the shooter
+	else:
+		_spurt_angle = direction.angle() + PI + randf_range(-0.9, 0.9)   # out of the wound, back the way the hit came
+	_pool_turn = PI * 0.5 * randi_range(0, 3)
 	_twitch_seed = randf_range(0.2, 1.2)   # the first fit starts straight away
 	# A few short squiggles at the wound: the veins that pump.
 	for i in 3:
@@ -101,8 +115,35 @@ func _wound() -> Vector2:
 	return at + direction * 2.0
 
 
+## True for the Art Director's pixel bodies: they play their death
+## animation and bleed the pixel pool and spurt.
+func is_pixel() -> bool:
+	return corpse.has("pixel")
+
+
+## The pixel pool's frame right now (-1: no pool).
+func pool_frame() -> int:
+	var last: int = {Game.BloodLevel.FULL: POOL_LAST, Game.BloodLevel.REDUCED: POOL_LAST_REDUCED}.get(blood_level, -1)
+	if last < 0:
+		return -1
+	return mini(int(_time / POOL_TIME * (POOL_LAST + 1)), last)
+
+
+## How big the pixel pool is drawn: the dog bleeds a smaller one (0.8x).
+func pool_size() -> float:
+	return 0.8 if corpse.get("pixel", "") == "dog" else 1.0
+
+
+## Where the pool is centred.
+func pool_center() -> Vector2:
+	return at if is_pixel() else at + direction * 4.0
+
+
 ## How far the pool has spread right now (fast at first, then slower).
 func pool_radius() -> float:
+	if is_pixel():
+		var index := pool_frame()
+		return 0.0 if index < 0 else _pool_radius_of(index) * pool_size()
 	var full: float = {Game.BloodLevel.FULL: POOL_FULL, Game.BloodLevel.REDUCED: POOL_REDUCED}.get(blood_level, 0.0)
 	return full * (1.0 - exp(-_time / 1.1))
 
@@ -116,6 +157,20 @@ func pool_polygon(radius: float) -> PackedVector2Array:
 	return points
 
 
+## How far the pixel pool's frame `index` reaches from its middle, in room
+## px at size 1 (half the smaller side of what's drawn in it).
+static func _pool_radius_of(index: int) -> float:
+	if _pool_radii.is_empty():
+		var info := HdBody.info_of("blood_pool")
+		var image: Image = HdBody._texture(info.file).get_image()
+		if image.is_compressed():
+			image.decompress()
+		for i in int(info.frames):
+			var used := image.get_region(Rect2i(i * int(info.cell_w), 0, int(info.cell_w), int(info.cell_h))).get_used_rect()
+			_pool_radii.append(minf(used.size.x, used.size.y) * 0.5 * float(info.game_scale))
+	return _pool_radii[index]
+
+
 ## How far the legs are bent this frame, in radians: shivers in short fits
 ## that die away.
 func leg_twitch() -> float:
@@ -127,6 +182,9 @@ func leg_twitch() -> float:
 
 
 func _draw() -> void:
+	if is_pixel():
+		_draw_pixel()
+		return
 	var radius := pool_radius()
 	if radius > 0.5:
 		draw_colored_polygon(pool_polygon(radius), gore.dark_blood_color)
@@ -141,3 +199,28 @@ func _draw() -> void:
 	for drop in _drops:
 		draw_line(drop.pos, drop.pos - drop.vel * 0.025, gore.blood_color, drop.size)
 		draw_circle(drop.pos, drop.size, gore.blood_color)
+
+
+## The Art Director's pixel version: the pool spreads underneath, the body
+## plays its death (the leg shiver is in the frames) and the wound spurts.
+func _draw_pixel() -> void:
+	var pool := pool_frame()
+	if pool >= 0:
+		HdBody.draw_frame(self, "blood_pool", pool, pool_center(), _pool_turn, pool_size())
+	var who: String = corpse.pixel
+	var death := HdBody.info_of(who + "_death")
+	var index := mini(int(_time * float(death.get("fps", 12))), int(death.get("frames", 1)) - 1)
+	HdBody.draw_frame(self, who + "_death", index, at, direction.angle() + PI * 0.5, float(corpse.get("size", 1.0)))
+	if blood_level == Game.BloodLevel.FULL and _time < SPURT_TIME:
+		var step := int(_time * float(HdBody.info_of("blood_spurt").get("fps", 12))) % SPURT_STEPS
+		if step < 6:
+			var fade := Color(1, 1, 1, clampf(1.6 - _time / SPURT_TIME, 0.0, 1.0))
+			HdBody.draw_frame(self, "blood_spurt", step, _wound(), _spurt_angle + PI * 0.5, 1.0, fade)
+		var vein_color := gore.dark_blood_color.lerp(gore.blood_color.lightened(0.3), _beat_glow)
+		for vein in _veins:
+			var placed := PackedVector2Array()
+			for point in vein:
+				placed.append(_wound() + point)
+			draw_polyline(placed, vein_color, 1.0)
+	for drop in _drops:
+		draw_rect(Rect2((drop.pos - Vector2.ONE * drop.size * 0.5).floor(), Vector2.ONE * ceilf(drop.size)), gore.blood_color)
