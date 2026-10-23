@@ -22,6 +22,31 @@ const LEVELS := [
 ]
 ## A person's shoulders, seen from above, in metres (suit jacket included).
 const PERSON_WIDTH_M := 0.5
+## Real rooms in square metres (a mansion: generous, but not a sports hall).
+## The first kind found among a room's furniture names the room; earlier wins.
+const ROOM_M2 := {
+	"bathroom": [3, 18],
+	"kitchen": [8, 40],
+	"bedroom": [9, 45],
+	"office": [8, 35],
+	"dining room": [10, 45],
+	"living room": [15, 90],
+	"room": [2, 120],
+}
+const ROOM_KIND_BY_PIECE := {
+	"toilet": "bathroom", "bath": "bathroom", "tub": "bathroom", "shower": "bathroom", "sink": "bathroom",
+	"kitchen": "kitchen", "fridge": "kitchen", "stove": "kitchen",
+	"bed": "bedroom",
+	"exec_desk": "office", "office": "office",
+	"dining": "dining room",
+	"sofa": "living room",
+}
+## A corridor or doorway narrower than this is not a walkway in a real home.
+const ROOM_NARROWEST_M := 0.9
+## Openings narrower than this split two rooms (doorways, archways).
+const ROOM_GAP_M := 1.8
+## Enemies fall this far along the hit (grunt.gd: add_kill at position + direction * 8).
+const CORPSE_SHOVE := 8.0
 ## Real-life sizes seen from above, in metres: [long side min, max, short side min, max].
 ## The first key found in a piece's name wins, so longer names go first.
 const SIZES := {
@@ -352,6 +377,27 @@ func check_level(path: String, rendering: bool) -> void:
 		await check_walls("the dog walking", dogs[0], dog_reach, body_masks(dogs[0].get_node_or_null("HdBody"), MOVE_ANIMS), wall, near_wall, size, map, path, rendering, dog_blocked)
 		await check_walls("the dog biting", dogs[0], dog_reach, body_masks(dogs[0].get_node_or_null("HdBody"), ATTACK_ANIMS), wall, near_wall, size, map, path, rendering, dog_blocked, true)
 
+	# --- 6b. Bodies: a corpse stays for good, so no part of it may lie in a
+	# wall (Fianso, 2026-10-23: a body lying over the wall). Every dead pose and
+	# death frame, turned every way, wherever someone can die. Enemies land
+	# CORPSE_SHOVE px along the hit (grunt.gd add_kill), the player where he stood.
+	var corpse_cases := [["hero", reach, 0.0, "a dead hero"], ["enemy", reach, CORPSE_SHOVE, "a dead enemy"]]
+	if not dogs.is_empty():
+		corpse_cases.append(["dog", dog_reach, CORPSE_SHOVE, "a dead dog"])
+	for case in corpse_cases:
+		var masks := corpse_masks(case[0], case[2])
+		if masks.is_empty():
+			continue
+		await check_walls("%s (%d pose(s))" % [case[3], corpse_poses(case[0]).size()], player, case[1], masks, wall, near_wall, size, map, path, false)
+		if not pieces.is_empty() and case[0] != "dog":
+			# The gore layer is under the furniture: a body under a table is
+			# fine, half a body under a sofa or a cabinet is not.
+			var worst := sweep(case[1], masks, owner_of, size, pieces, false)
+			var bad := range(pieces.size()).filter(func(i): return worst[i].hidden > HIDDEN_LIMIT * 3 and not DOG_FITS_UNDER.any(func(k): return names[i].contains(k)))
+			check(bad.is_empty(), "%s never lies under a sofa, cabinet or other solid furniture (%d piece(s))" % [case[3], bad.size()], true)
+			for i in bad:
+				note("%s: up to %d px of %s under it at %s" % [names[i], worst[i].hidden, case[3], worst[i].hidden_at])
+
 	# --- 7. Pixel size: characters and rooms drawn with pixels the same size ---
 	var room_texel := 1.0   # room px per texel of the floor picture / furniture
 	if map.picture:
@@ -420,6 +466,128 @@ func check_level(path: String, rendering: bool) -> void:
 		var w := door_width(door) / px_per_m
 		if w > 0.0:
 			check(w >= DOOR_M[0] * 0.85 and w <= DOOR_M[1] * 1.15, "door %s is %.2f m wide (real: %.2f-%.2f m per door panel)" % [door.name, w, DOOR_M[0], DOOR_M[1]], true)
+	# --- 9. Weapons and blood: same pixel size, never inside or through a wall ---
+	var weapon_files := DirAccess.get_files_at("res://data/weapons")
+	var stop_margin := 140.0 / 60.0 * 1.5   # weapon_pickup.gd: the ray looks 1.5 steps ahead at fling speed
+	for file in weapon_files:
+		if not file.ends_with(".tres"):
+			continue
+		var data = load("res://data/weapons/" + file)
+		if data == null or data.get("floor_texture") == null:
+			continue
+		var tex: Texture2D = data.floor_texture
+		check(room_texel >= 0.75 and room_texel <= 1.33, "%s lying on the floor is drawn with 1.00 room px per art pixel, the room with %.2f%s" % [file.get_basename(), room_texel, "" if room_texel > 0.75 else ": the weapon is %.1fx coarser" % (1.0 / room_texel)])
+		var half := tex.get_size().length() / 2.0
+		check(half <= stop_margin + WALL_LIMIT, "a dropped or thrown %s stops before a wall with all of it outside (up to %.0f px can end inside: it stops by its centre, %.0f px early)" % [file.get_basename(), maxf(half - stop_margin, 0.0), stop_margin])
+	for thing in root.get_tree().get_nodes_in_group("pickups"):
+		var data = thing.get("weapon")
+		if data == null or data.floor_texture == null:
+			continue
+		var tex_size: Vector2 = data.floor_texture.get_size()
+		var inside := 0
+		for y in int(tex_size.y):
+			for x in int(tex_size.x):
+				var q := Vector2i((thing.global_transform * (Vector2(x, y) + Vector2(0.5, 0.5) - tex_size / 2.0)).floor())
+				if q.x < 0 or q.y < 0 or q.x >= size.x or q.y >= size.y or wall[q.y * size.x + q.x] == 1:
+					inside += 1
+		check(inside <= WALL_LIMIT, "%s at tile %s lies clear of the walls (%d px inside)" % [thing.name, (thing.global_position / map.tile_px).floor(), inside])
+	# Blood from a spurt flies with no wall check (dying_body.gd): how far can
+	# a drop get, and is a wall that thin anywhere?
+	var travel := 0.0
+	var speed := 120.0 * 1.4   # fastest spurt: the first heartbeat
+	for frame in int(0.3 * 60):
+		travel += speed / 60.0
+		speed *= 0.9
+	travel += 2.0   # the wound sits 2 px out from the body
+	var thin := thinnest_wall(wall, size)
+	check(travel < thin, "blood spurts never land on the far side of a wall (a drop flies up to %.0f px; the thinnest wall is %d px)" % [travel, thin])
+
+	# Rooms next to a person: a bedroom, a bathroom or a corridor the size of a
+	# real one. Picture maps draw their walls in the picture, so a room is a
+	# patch of floor someone can stand on, cut at the doors; its kind comes
+	# from the furniture in it.
+	# Doorways and archways are where the floor narrows: shrink the floor until
+	# the gaps close, number the pieces left (the rooms), then grow them back.
+	var steps4 := [Vector2i(2, 0), Vector2i(-2, 0), Vector2i(0, 2), Vector2i(0, -2)]
+	var depth := {}   # reach spot -> steps from the edge of the floor
+	var edge: Array[Vector2i] = []
+	for at in reach:
+		if map.tile(at / int(map.tile_px)) == "D" or steps4.any(func(d): return not reach.has(at + d)):
+			depth[at] = 0
+			edge.append(at)
+	while not edge.is_empty():
+		var next_edge: Array[Vector2i] = []
+		for at in edge:
+			for d in steps4:
+				var n: Vector2i = at + d
+				if reach.has(n) and not depth.has(n):
+					depth[n] = depth[at] + 1
+					next_edge.append(n)
+		edge = next_edge
+	var core_steps := int(ROOM_GAP_M * px_per_m / 4.0)   # half the gap, in 2 px steps
+	var region := {}   # reach spot -> room number
+	var room_spots := []
+	for start in reach:
+		if region.has(start) or depth.get(start, 0) < core_steps:
+			continue
+		var todo: Array[Vector2i] = [start]
+		region[start] = room_spots.size()
+		while not todo.is_empty():
+			var at: Vector2i = todo.pop_back()
+			for d in steps4:
+				var n: Vector2i = at + d
+				if reach.has(n) and not region.has(n) and depth.get(n, 0) >= core_steps:
+					region[n] = room_spots.size()
+					todo.append(n)
+		room_spots.append([])
+	var grow: Array = region.keys()
+	while not grow.is_empty():
+		var next_grow := []
+		for at in grow:
+			for d in steps4:
+				var n: Vector2i = at + d
+				if reach.has(n) and not region.has(n):
+					region[n] = region[at]
+					next_grow.append(n)
+		grow = next_grow
+	for at in region:
+		room_spots[region[at]].append(at)
+	var kinds := {}   # room number -> kind
+	for i in pieces.size():
+		var votes := {}
+		var r := piece_rects[i].grow(12)
+		for y in range(r.position.y / 2 * 2, r.end.y, 2):
+			for x in range(r.position.x / 2 * 2, r.end.x, 2):
+				if region.has(Vector2i(x, y)):
+					votes[region[Vector2i(x, y)]] = votes.get(region[Vector2i(x, y)], 0) + 1
+		if votes.is_empty():
+			continue
+		var room: int = votes.keys().reduce(func(a, b): return a if votes[a] >= votes[b] else b)
+		for key in ROOM_KIND_BY_PIECE:
+			if names[i].contains(key) and not names[i].contains("dog_bed"):
+				var k: String = ROOM_KIND_BY_PIECE[key]
+				if not kinds.has(room) or ROOM_M2.keys().find(k) < ROOM_M2.keys().find(kinds[room]):
+					kinds[room] = k
+				break
+	for room in room_spots.size():
+		var spots: Array = room_spots[room]
+		var lo: Vector2i = spots[0]
+		var hi: Vector2i = spots[0]
+		for at in spots:
+			lo = lo.min(at)
+			hi = hi.max(at)
+		# Where a person can stand, plus his own width on each side: the floor.
+		var w := (hi.x - lo.x + 2 * player_radius) / px_per_m
+		var h := (hi.y - lo.y + 2 * player_radius) / px_per_m
+		var area := w * h
+		if spots.size() < 20:
+			continue   # a nook by a door, not a room
+		var kind: String = kinds.get(room, "room")
+		var want: Array = ROOM_M2[kind]
+		var tile := Vector2i(Vector2(lo) / map.tile_px)
+		check(area >= want[0] * 0.85 and area <= want[1] * 1.15, "%s at tile %s is %.1f x %.1f m = %.0f m2 next to a person (real %s: %d-%d m2)" % [kind, tile, w, h, area, kind, want[0], want[1]], true)   # rooms are found from the floor shape: look at the picture before calling it wrong
+		if minf(w, h) < ROOM_NARROWEST_M:
+			check(false, "%s at tile %s is only %.1f m across (a walkway needs at least %.1f m)" % [kind, tile, minf(w, h), ROOM_NARROWEST_M], minf(w, h) >= ROOM_NARROWEST_M * 0.8)
 
 
 ## Marks the piece's opaque pixels in owner_of (the piece drawn on top wins).
@@ -512,6 +680,78 @@ func body_masks(real: HdBody, anims: Array) -> Array:
 		masks.append(seen.keys())
 	body.free()
 	return masks
+
+
+## Every picture a dead body can show: the dead poses ("hero_dead",
+## "hero_dead2", ...) and the death frames that end on them.
+func corpse_poses(who: String) -> Array:
+	var poses := []
+	for name in [who + "_dead"] + range(2, 9).map(func(k): return "%s_dead%d" % [who, k]):
+		if not HdBody.info_of(name).is_empty():
+			poses.append([name, 0])
+	for name in [who + "_death"] + range(2, 9).map(func(k): return "%s_death%d" % [who, k]):
+		var info := HdBody.info_of(name)
+		for i in int(info.get("frames", 0)):
+			poses.append([name, i])
+	return poses
+
+
+## The room pixels a corpse covers, for FACINGS headings, drawn the way
+## GoreLayer.draw_body draws it (pivot at the spot, turned to the heading).
+func corpse_masks(who: String, shove: float) -> Array:
+	var poses := corpse_poses(who)
+	if poses.is_empty():
+		return []
+	var body := HdBody.new()
+	body.setup(who)
+	var size := body.size()
+	body.free()
+	var points := []   # unturned, pivot at the origin
+	var seen_local := {}
+	for pose in poses:
+		var info := HdBody.info_of(pose[0])
+		var image: Image = load(HdBody.ANIMS_FILE.get_base_dir().path_join(info.file)).get_image()
+		if image.is_compressed():
+			image.decompress()
+		var scale := float(info.game_scale) * size
+		for y in range(0, int(info.cell_h), 2):
+			for x in range(0, int(info.cell_w), 2):
+				if image.get_pixel(int(info.cell_w) * pose[1] + x, y).a > 0.5:
+					var p := (Vector2(x, y) + Vector2.ONE - Vector2(info.pivot[0], info.pivot[1])) * scale
+					var key := Vector2i(p.round())
+					if not seen_local.has(key):
+						seen_local[key] = true
+						points.append(p)
+	var masks := []
+	for turn in FACINGS:
+		var heading := Vector2.DOWN.rotated(TAU * turn / FACINGS)
+		var xf := Transform2D(heading.angle() + PI * 0.5, heading * shove)
+		var seen := {}
+		for p in points:
+			seen[Vector2i((xf * p).floor())] = true
+		masks.append(seen.keys())
+	return masks
+
+
+## The thinnest wall between two floor pixels, straight across (rows and columns), in px.
+func thinnest_wall(wall: PackedByteArray, size: Vector2i) -> int:
+	var thin := 1000
+	for horizontal in [true, false]:
+		var lines := size.y if horizontal else size.x
+		var along := size.x if horizontal else size.y
+		for a in lines:
+			var run := 0
+			var after_floor := false
+			for b in along:
+				var k := a * size.x + b if horizontal else b * size.x + a
+				if wall[k] == 1:
+					run += 1
+				else:
+					if after_floor and run > 0:
+						thin = mini(thin, run)
+					run = 0
+					after_floor = wall[k] == 0
+	return thin
 
 
 ## Shoulder width in room px: the widest row of the walk's first frame

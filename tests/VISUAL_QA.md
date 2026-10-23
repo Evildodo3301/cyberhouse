@@ -21,6 +21,12 @@ ways, with the real HD frames, on level 1 (both floors) and level 2.
 | Real-life sizes | Furniture, doors and the dog vs a person, using the size table in the test (`SIZES`) | FAIL if more than 30% off, WARN if 15-30% |
 | Reachable | Every enemy and weapon can be walked up to; areas nobody can enter are listed | FAIL / WARN |
 | Animations | Walk frames don't jump (sliding, jitter); every animation is the same size as walking | WARN |
+| Walls | No person or dog drawn into a wall walking; an attack tucked behind a wall is a WARN, a blade showing on the far side FAILs | FAIL / WARN |
+| Dead bodies | Every dead pose and death frame (people and dogs), turned every way, wherever someone can die: never in a wall; never half under a sofa, cabinet or plant | FAIL / WARN |
+| Pixel size | People, dogs, rooms and weapons on the floor all drawn with the same pixel size | FAIL |
+| Weapons | Dropped or thrown weapons stop with all of them outside the wall; weapons placed in the level lie clear of walls | FAIL |
+| Blood | A spurt can't fly further than the thinnest wall (or it lands in the next room) | FAIL |
+| Rooms | Each room (found from the floor shape, cut at doorways) against real homes: bedroom, bathroom, kitchen, office, living room; walkways at least 0.9 m | WARN: look at the map |
 
 Do not send a preview while anything says FAIL, unless Fianso already knows
 about that FAIL.
@@ -43,5 +49,15 @@ everything with that:
 - [ ] Nothing pops bigger or smaller when switching animation (idle, walk, attack).
 - [ ] The outline and the implant code stay on the character, never on the floor around him.
 - [ ] Touch controls don't cover the action in the middle of the screen.
+
+- [ ] Rooms look like real rooms: a bathroom isn't the size of a lounge, a corridor is wide enough for two people to pass.
+- [ ] No stretched or cut art, seams in the floor, doubled wall lines, or furniture floating or facing into a wall.
+
+## 3. Preview pictures made outside the game
+
+A picture put together by hand (art previews, before/after sheets) must
+show everything where it could really be in the game: bodies, blood and
+weapons on open floor, never over a wall or a painting. QA looks at every
+such picture before it goes to Fianso.
 
 Write what you find in plain words, with a picture, before the preview goes out.
