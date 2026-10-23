@@ -170,7 +170,7 @@ static func _ring(distance: float) -> Array:
 	return spots
 
 
-## The drawn pixels of a death (every few frames) and its dead pose, as
+## The drawn pixels of a death (every frame) and its dead pose, as
 ## points about 1 room px apart relative to the pivot, at size 1, outermost
 ## first (so a misfit is found quickly).
 static func pose_points(death: String, dead: String) -> PackedVector2Array:
@@ -187,7 +187,7 @@ static func pose_points(death: String, dead: String) -> PackedVector2Array:
 			image.decompress()
 		var scale := float(info.game_scale)
 		var step := maxi(int(round(1.0 / scale)), 1)   # about 1 room px
-		var frames: Array = [0] if int(info.frames) == 1 else range(0, int(info.frames), 4) + [int(info.frames) - 1]
+		var frames: Array = range(int(info.frames))   # every frame: a pose in between can poke out too (QA)
 		for f in frames:
 			for y in range(0, int(info.cell_h), step):
 				for x in range(0, int(info.cell_w), step):

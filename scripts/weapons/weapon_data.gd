@@ -50,6 +50,9 @@ enum Kind { MELEE, GUN }
 @export_group("Looks")
 ## Colour of bullets and of the placeholder shape when there is no art.
 @export var color: Color = Color(0.85, 0.85, 0.85)
+## Room px per art px of every picture below (floor, thrown, fire): 1/3 for
+## the Art Director's x3 weapons, the same pixel size as everything else.
+@export var art_scale: float = 1.0
 ## Top-down sprite pointing right (+x): lying on the floor and held in hand.
 @export var floor_texture: Texture2D
 ## Side view for the HUD, next to the ammo count.
@@ -85,8 +88,13 @@ const HELD_MAX_SCALE := 0.6
 func held_size() -> Vector2:
 	if floor_texture == null:
 		return Vector2.ZERO
-	var size := floor_texture.get_size()
+	var size := floor_size()
 	return size * minf(HELD_MAX_SCALE, HELD_MAX_LENGTH / size.x)
+
+
+## The floor sprite's size in room px.
+func floor_size() -> Vector2:
+	return floor_texture.get_size() * art_scale if floor_texture else Vector2.ZERO
 
 
 ## Frame `index` of a strip of `count` frames laid side by side.

@@ -910,7 +910,8 @@ func _draw() -> void:
 		if has_gun():
 			# Muzzle fire, starting at the end of the barrel.
 			draw_set_transform(_attack_direction * _muzzle_distance(), angle)
-			draw_texture_rect_region(weapon.fire_texture, Rect2(Vector2(0, -rect.size.y / 2.0), rect.size), rect)
+			var drawn := rect.size * weapon.art_scale
+			draw_texture_rect_region(weapon.fire_texture, Rect2(Vector2(0, -drawn.y / 2.0), drawn), rect)
 		else:
 			# The swing streak, sweeping through the arc.
 			var grow := weapon.reach * 0.9 / rect.size.x

@@ -18,6 +18,7 @@ arc_degrees = 110.0
 windup_time = 0.1
 recovery_time = 0.28
 color = Color(0.82, 0.86, 0.9, 1)
+art_scale = 0.3333333
 floor_texture = ExtResource("2_floor")
 icon = ExtResource("3_icon")
 thrown_texture = ExtResource("4_thrown")

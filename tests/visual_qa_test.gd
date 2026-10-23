@@ -499,17 +499,19 @@ func check_level(path: String, rendering: bool) -> void:
 		var data = load("res://data/weapons/" + file)
 		if data == null or data.get("floor_texture") == null:
 			continue
-		var tex: Texture2D = data.floor_texture
-		check(room_texel >= 0.75 and room_texel <= 1.33, "%s lying on the floor is drawn with 1.00 room px per art pixel, the room with %.2f%s" % [file.get_basename(), room_texel, "" if room_texel > 0.75 else ": the weapon is %.1fx coarser" % (1.0 / room_texel)])
+		var art: float = data.get("art_scale") if data.get("art_scale") != null else 1.0   # room px per art px
+		var ratio := art / room_texel
+		check(ratio >= 0.75 and ratio <= 1.33, "%s lying on the floor is drawn with %.2f room px per art pixel, the room with %.2f%s" % [file.get_basename(), art, room_texel, "" if ratio <= 1.33 else ": the weapon is %.1fx coarser" % ratio])
 	for thing in root.get_tree().get_nodes_in_group("pickups"):
 		var data = thing.get("weapon")
 		if data == null or data.floor_texture == null:
 			continue
 		var tex_size: Vector2 = data.floor_texture.get_size()
+		var placed_scale: float = thing.call("floor_scale") if thing.has_method("floor_scale") else 1.0
 		var inside := 0
 		for y in int(tex_size.y):
 			for x in int(tex_size.x):
-				var q := Vector2i((thing.global_transform * (Vector2(x, y) + Vector2(0.5, 0.5) - tex_size / 2.0)).floor())
+				var q := Vector2i((thing.global_transform * ((Vector2(x, y) + Vector2(0.5, 0.5) - tex_size / 2.0) * placed_scale)).floor())
 				if q.x < 0 or q.y < 0 or q.x >= size.x or q.y >= size.y or wall[q.y * size.x + q.x] == 1:
 					inside += 1
 		check(inside <= WALL_LIMIT, "%s at tile %s lies clear of the walls (%d px inside)" % [thing.name, (thing.global_position / map.tile_px).floor(), inside])

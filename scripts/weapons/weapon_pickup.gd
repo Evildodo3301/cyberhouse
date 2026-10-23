@@ -25,6 +25,7 @@ func _ready() -> void:
 		ammo = weapon.ammo
 	if rotation == 0.0:
 		rotation = randf() * TAU   # lying at a random angle, like it was dropped
+	_step_out_of_walls.call_deferred()   # a level may place one by a wall
 
 
 ## True if picking it up would give you something to use.
@@ -36,6 +37,27 @@ func is_usable() -> bool:
 func fling(from: Vector2, direction: Vector2, speed: float = 140.0) -> void:
 	global_position = from
 	_velocity = direction.normalized() * speed
+	_step_out_of_walls()
+
+
+## Dropped right by a wall: moved the least it takes so no part of it can
+## lie in the wall (QA).
+func _step_out_of_walls() -> void:
+	if not is_inside_tree():
+		return
+	var space := get_world_2d().direct_space_state
+	var query := PhysicsShapeQueryParameters2D.new()
+	var circle := CircleShape2D.new()
+	circle.radius = _half_length()
+	query.shape = circle
+	query.collision_mask = 1 | 16
+	for distance in range(0, int(circle.radius * 2.0) + 1):
+		for i in (1 if distance == 0 else 16):
+			var at := global_position + Vector2.from_angle(TAU * i / 16.0) * distance
+			query.transform = Transform2D(0.0, at)
+			if space.intersect_shape(query, 1).is_empty():
+				global_position = at
+				return
 
 
 func _physics_process(delta: float) -> void:
@@ -43,13 +65,23 @@ func _physics_process(delta: float) -> void:
 		_velocity = Vector2.ZERO
 	else:
 		var step := _velocity * delta
-		# Stop at walls (1) and doors (16) instead of sliding through them,
-		# half its length short, so no part of it (lying any way) is in one.
-		var query := PhysicsRayQueryParameters2D.create(global_position, global_position + step * 1.5 + _velocity.normalized() * _half_length(), 1 | 16)
-		if get_world_2d().direct_space_state.intersect_ray(query).is_empty():
+		# Stop at walls (1) and doors (16) instead of sliding through them:
+		# a circle as wide as the weapon is long, so as it spins no part of
+		# it ever turns into a wall, whichever way it hits.
+		var space := get_world_2d().direct_space_state
+		var query := PhysicsShapeQueryParameters2D.new()
+		var circle := CircleShape2D.new()
+		circle.radius = _half_length()
+		query.shape = circle
+		query.transform = Transform2D(0.0, global_position)
+		query.motion = step
+		query.collision_mask = 1 | 16
+		var free_part := space.cast_motion(query)
+		if free_part.is_empty() or free_part[0] >= 1.0:
 			global_position += step
 			rotation += 12.0 * delta
 		else:
+			global_position += step * free_part[0]
 			_velocity = Vector2.ZERO
 		_velocity = _velocity.move_toward(Vector2.ZERO, 420.0 * delta)
 		if thrower and _velocity.length() >= KNOCK_SPEED:
@@ -67,11 +99,16 @@ func _physics_process(delta: float) -> void:
 			queue_free()
 
 
-## Half the length of its picture on the floor, in room px.
+## Room px per art px of its picture (QA's check reads this).
+func floor_scale() -> float:
+	return weapon.art_scale if weapon else 1.0
+
+
+## Half the diagonal of its picture on the floor, in room px: lying at any
+## angle, no part of it reaches further from its middle.
 func _half_length() -> float:
 	if weapon and weapon.floor_texture:
-		var size := weapon.floor_texture.get_size()
-		return maxf(size.x, size.y) * 0.5
+		return weapon.floor_size().length() * 0.5
 	return 9.0
 
 
@@ -107,19 +144,20 @@ func _draw() -> void:
 		var frame := int(Time.get_ticks_msec() / 50.0) % weapon.thrown_frames
 		var rect := WeaponData.frame_rect(weapon.thrown_texture, weapon.thrown_frames, frame)
 		draw_set_transform(Vector2.ZERO, -global_rotation)
-		draw_texture_rect_region(weapon.thrown_texture, Rect2(-rect.size / 2.0, rect.size), rect, tint)
+		var drawn := rect.size * weapon.art_scale
+		draw_texture_rect_region(weapon.thrown_texture, Rect2(-drawn / 2.0, drawn), rect, tint)
 		if weapon.blade_shine:
 			var spin := float(frame) / weapon.thrown_frames * PI
 			_shine.draw(self, Vector2(-5, 0).rotated(spin), Vector2(5, 0).rotated(spin), 3.0)
 		draw_set_transform(Vector2.ZERO)
 		return
 	if weapon.floor_texture:
-		var size := weapon.floor_texture.get_size()
-		draw_texture(weapon.floor_texture, -size / 2.0, tint)
+		var size := weapon.floor_size()
+		draw_texture_rect(weapon.floor_texture, Rect2(-size / 2.0, size), false, tint)
 		if weapon.blade_shine:
 			var line := BladeShine.blade_line(weapon.floor_texture, 1, 0)
 			if not line.is_empty():
-				_shine.draw(self, line[0], line[1], 3.0)
+				_shine.draw(self, line[0] * weapon.art_scale, line[1] * weapon.art_scale, 3.0)
 		return
 	# Placeholder shape for a weapon with no art yet.
 	var c := weapon.color * tint
