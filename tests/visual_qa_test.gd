@@ -493,7 +493,6 @@ func check_level(path: String, rendering: bool) -> void:
 			check(w >= DOOR_M[0] * 0.85 and w <= DOOR_M[1] * 1.15, "door %s is %.2f m wide (real: %.2f-%.2f m per door panel)" % [door.name, w, DOOR_M[0], DOOR_M[1]], true)
 	# --- 9. Weapons and blood: same pixel size, never inside or through a wall ---
 	var weapon_files := DirAccess.get_files_at("res://data/weapons")
-	var stop_margin := 140.0 / 60.0 * 1.5   # weapon_pickup.gd: the ray looks 1.5 steps ahead at fling speed
 	for file in weapon_files:
 		if not file.ends_with(".tres"):
 			continue
@@ -502,8 +501,6 @@ func check_level(path: String, rendering: bool) -> void:
 			continue
 		var tex: Texture2D = data.floor_texture
 		check(room_texel >= 0.75 and room_texel <= 1.33, "%s lying on the floor is drawn with 1.00 room px per art pixel, the room with %.2f%s" % [file.get_basename(), room_texel, "" if room_texel > 0.75 else ": the weapon is %.1fx coarser" % (1.0 / room_texel)])
-		var half := tex.get_size().length() / 2.0
-		check(half <= stop_margin + WALL_LIMIT, "a dropped or thrown %s stops before a wall with all of it outside (up to %.0f px can end inside: it stops by its centre, %.0f px early)" % [file.get_basename(), maxf(half - stop_margin, 0.0), stop_margin])
 	for thing in root.get_tree().get_nodes_in_group("pickups"):
 		var data = thing.get("weapon")
 		if data == null or data.floor_texture == null:
@@ -516,16 +513,81 @@ func check_level(path: String, rendering: bool) -> void:
 				if q.x < 0 or q.y < 0 or q.x >= size.x or q.y >= size.y or wall[q.y * size.x + q.x] == 1:
 					inside += 1
 		check(inside <= WALL_LIMIT, "%s at tile %s lies clear of the walls (%d px inside)" % [thing.name, (thing.global_position / map.tile_px).floor(), inside])
-	# Blood from a spurt flies with no wall check (dying_body.gd): how far can
-	# a drop get, and is a wall that thin anywhere?
-	var travel := 0.0
-	var speed := 120.0 * 1.4   # fastest spurt: the first heartbeat
-	for frame in int(0.3 * 60):
-		travel += speed / 60.0
-		speed *= 0.9
-	travel += 2.0   # the wound sits 2 px out from the body
-	var thin := thinnest_wall(wall, size)
-	check(travel < thin, "blood spurts never land on the far side of a wall (a drop flies up to %.0f px; the thinnest wall is %d px)" % [travel, thin])
+	# Fling every weapon at the nearest wall from spots right next to it, let
+	# it slide to a stop, and look at where its picture ends up.
+	var wall_spots := []   # [spot, direction to the wall]
+	for p in reach:
+		if (p.x + 3 * p.y) % 24 != 0:
+			continue
+		for k in 8:
+			var dir := Vector2.from_angle(TAU * k / 8.0)
+			var q := Vector2i((Vector2(p) + dir * 20.0).floor())
+			if q.x >= 0 and q.y >= 0 and q.x < size.x and q.y < size.y and wall[q.y * size.x + q.x] == 1:
+				wall_spots.append([Vector2(p), dir])
+				break
+	var flung := []
+	var level_root: Node = root.get_tree().current_scene
+	for file in weapon_files:
+		if not file.ends_with(".tres"):
+			continue
+		var data = load("res://data/weapons/" + file)
+		if data == null or data.get("floor_texture") == null:
+			continue
+		for spot in wall_spots:
+			var pickup: Node2D = load("res://scenes/weapons/weapon_pickup.tscn").instantiate()
+			pickup.weapon = data
+			pickup.ignore_player = true
+			level_root.add_child(pickup)
+			pickup.fling(spot[0], spot[1])
+			flung.append(pickup)
+	for i in 90:
+		await physics_frame
+	var weapon_worst := {}
+	for pickup in flung:
+		var name: String = pickup.weapon.resource_path.get_file().get_basename()
+		var tex_size: Vector2 = pickup.weapon.floor_texture.get_size()
+		var scale: float = pickup.call("floor_scale") if pickup.has_method("floor_scale") else 1.0
+		var inside := 0
+		for y in int(tex_size.y):
+			for x in int(tex_size.x):
+				var q := Vector2i((pickup.global_transform * ((Vector2(x, y) + Vector2(0.5, 0.5) - tex_size / 2.0) * scale)).floor())
+				if q.x < 0 or q.y < 0 or q.x >= size.x or q.y >= size.y or wall[q.y * size.x + q.x] == 1:
+					inside += 1
+		if inside > weapon_worst.get(name, [-1])[0]:
+			weapon_worst[name] = [inside, pickup.global_position]
+		pickup.queue_free()
+	for name in weapon_worst:
+		check(weapon_worst[name][0] <= WALL_LIMIT, "a %s flung at a wall stops with all of it outside (%d throws; worst %d px inside at %s)" % [name, wall_spots.size(), weapon_worst[name][0], weapon_worst[name][1].round()])
+	# Kill people with their backs to a wall, so the spurt flies at the wall,
+	# and watch every drop: none may show up on the far side.
+	if gore and gore.has_method("add_kill"):
+		var game: Node = root.get_node("Game")
+		var keep_blood = game.blood_level
+		game.blood_level = game.BloodLevel.FULL
+		for spot in wall_spots.slice(0, 120):
+			gore.add_kill(spot[0], -spot[1], Color.BLACK, "pistol", {})
+		var through := 0
+		var through_at := Vector2.ZERO
+		for frame in 300:
+			await process_frame
+			for body in gore.get_children():
+				if not body.has_method("_wound"):
+					continue
+				var from := Vector2i(body._wound().floor())
+				for drop in body._drops:
+					var to := Vector2i(drop.pos.floor())
+					var steps := maxi(absi(to.x - from.x), absi(to.y - from.y))
+					var crossed := false
+					for t in range(1, steps):
+						var r := Vector2i((Vector2(from) + Vector2(to - from) * t / steps).round())
+						if r.x >= 0 and r.y >= 0 and r.x < size.x and r.y < size.y and wall[r.y * size.x + r.x] == 1:
+							crossed = true
+						elif crossed:
+							through += 1
+							through_at = Vector2(to)
+							break
+		game.blood_level = keep_blood
+		check(through == 0, "blood from a spurt never shows on the far side of a wall (%d kills with their backs to a wall; %d drops got through%s)" % [mini(wall_spots.size(), 120), through, "" if through == 0 else ", e.g. at %s" % through_at])
 
 	# Rooms next to a person: a bedroom, a bathroom or a corridor the size of a
 	# real one. Picture maps draw their walls in the picture, so a room is a
