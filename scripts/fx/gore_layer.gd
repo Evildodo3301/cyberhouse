@@ -327,7 +327,7 @@ func _paint_spray(at: Vector2, direction: Vector2, explosive: bool) -> void:
 	# Streaks: long smears thrown in the hit direction.
 	for i in (6 if explosive else 3):
 		var angle := direction.angle() + randf_range(-spread, spread) * 0.6
-		var length := randf_range(12.0, reach * 0.8)
+		var length := _open_length(at, angle, randf_range(12.0, reach * 0.8))
 		var end := at + Vector2.from_angle(angle) * length
 		var width := randf_range(0.75, 1.5)
 		for step in int(length / BLOOD_PIXEL):
@@ -338,19 +338,31 @@ func _paint_spray(at: Vector2, direction: Vector2, explosive: bool) -> void:
 	# The Art Director's splats: a couple of big pixel splashes in the spray.
 	if not explosive:
 		for i in 2:
-			var splash := at + direction.rotated(randf_range(-spread, spread) * 0.5) * randf_range(10.0, reach * 0.6)
+			var turn := direction.angle() + randf_range(-spread, spread) * 0.5
+			var splash := at + Vector2.from_angle(turn) * maxf(_open_length(at, turn, randf_range(10.0, reach * 0.6)) - 4.0, 0.0)
 			HdBody.draw_frame(_painter, "blood_splat", randi_range(0, 3), splash, PI * 0.5 * randi_range(0, 3))
 			_mark_wet(splash, 4.0)
 
 	# Spray: lots of small drops, denser close to the body.
 	for i in drops:
 		var angle := direction.angle() + randf_range(-spread, spread)
-		var distance := pow(randf(), 1.6) * reach + 3.0
+		var distance := _open_length(at, angle, pow(randf(), 1.6) * reach + 3.0)
 		var color := blood_color if randf() < 0.75 else dark_blood_color
 		var size := randf_range(0.6, 2.4)
 		_pixel_dot(at + Vector2.from_angle(angle) * distance, size, color)
 		if size >= 1.8:
 			_mark_wet(at + Vector2.from_angle(angle) * distance, size)
+
+
+## How far blood thrown from `at` at `angle` gets, at most `length`: a wall
+## or a door stops it, so it never lands in the next room.
+func _open_length(at: Vector2, angle: float, length: float) -> float:
+	if not is_inside_tree():
+		return length
+	var from := to_global(at)
+	var ray := PhysicsRayQueryParameters2D.create(from, to_global(at + Vector2.from_angle(angle) * length), 1 | 16)
+	var hit := get_world_2d().direct_space_state.intersect_ray(ray)
+	return length if hit.is_empty() else maxf(from.distance_to(hit.position) - 0.5, 0.0)
 
 
 ## Blood is pixel art like the Art Director's pools and splats: drops and
