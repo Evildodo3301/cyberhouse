@@ -81,7 +81,14 @@ func _process(delta: float) -> void:
 	if blood_level == Game.BloodLevel.FULL and _time >= _next_beat and _time < SPURT_TIME:
 		_spurt()
 		_next_beat += lerpf(FIRST_BEAT, LAST_BEAT, _time / SPURT_TIME)
+	var space := get_world_2d().direct_space_state if not _drops.is_empty() else null
 	for drop in _drops:
+		# Walls (and doors) stop the blood: it never lands in the next room.
+		var next: Vector2 = drop.pos + drop.vel * delta
+		var ray := PhysicsRayQueryParameters2D.create(gore.to_global(drop.pos), gore.to_global(next), 1 | 16)
+		if not space.intersect_ray(ray).is_empty():
+			drop.vel = Vector2.ZERO
+			drop.life = 0.0
 		drop.pos += drop.vel * delta
 		drop.vel *= 0.9
 		drop.life -= delta

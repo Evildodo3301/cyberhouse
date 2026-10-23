@@ -43,8 +43,9 @@ func _physics_process(delta: float) -> void:
 		_velocity = Vector2.ZERO
 	else:
 		var step := _velocity * delta
-		# Stop at walls (1) and doors (16) instead of sliding through them.
-		var query := PhysicsRayQueryParameters2D.create(global_position, global_position + step * 1.5, 1 | 16)
+		# Stop at walls (1) and doors (16) instead of sliding through them,
+		# half its length short, so no part of it (lying any way) is in one.
+		var query := PhysicsRayQueryParameters2D.create(global_position, global_position + step * 1.5 + _velocity.normalized() * _half_length(), 1 | 16)
 		if get_world_2d().direct_space_state.intersect_ray(query).is_empty():
 			global_position += step
 			rotation += 12.0 * delta
@@ -64,6 +65,14 @@ func _physics_process(delta: float) -> void:
 	if _velocity == Vector2.ZERO and distance <= player.settings.pickup_radius:
 		if player.try_pick_up(self):
 			queue_free()
+
+
+## Half the length of its picture on the floor, in room px.
+func _half_length() -> float:
+	if weapon and weapon.floor_texture:
+		var size := weapon.floor_texture.get_size()
+		return maxf(size.x, size.y) * 0.5
+	return 9.0
 
 
 func _hit_enemy() -> void:
