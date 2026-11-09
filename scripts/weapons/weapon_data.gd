@@ -32,6 +32,9 @@ enum Kind { MELEE, GUN }
 @export var ammo: int = 0
 ## How fast bullets fly, in pixels per second (you can see them travel).
 @export var bullet_speed: float = 420.0
+## Keeps firing while you hold the aim stick (every recovery_time), like
+## the machine gun. Off = one shot each time you lift your thumb.
+@export var automatic: bool = false
 ## Bullets per shot (a shotgun would use 5 or more).
 @export var pellets: int = 1
 ## Random spread of each bullet, in degrees either side.
@@ -45,5 +48,56 @@ enum Kind { MELEE, GUN }
 @export var void_flash: float = 0.0
 
 @export_group("Looks")
-## Colour of the weapon lying on the floor (placeholder until art).
+## Colour of bullets and of the placeholder shape when there is no art.
 @export var color: Color = Color(0.85, 0.85, 0.85)
+## Room px per art px of every picture below (floor, thrown, fire): 1/3 for
+## the Art Director's x3 weapons, the same pixel size as everything else.
+@export var art_scale: float = 1.0
+## Top-down sprite pointing right (+x): lying on the floor and held in hand.
+@export var floor_texture: Texture2D
+## Side view for the HUD, next to the ammo count.
+@export var icon: Texture2D
+## Spin frames side by side, played while it flies after a throw.
+@export var thrown_texture: Texture2D
+@export var thrown_frames: int = 4
+## Gun: muzzle fire frames, side by side, pointing right from the barrel.
+## Melee: the swing streak.
+@export var fire_texture: Texture2D
+@export var fire_frames: int = 4
+## Frames per second of the fire / swing animation.
+@export var fire_fps: float = 60.0
+## Arms + weapon drawn on top of the torso, 64 px cells side by side, facing
+## up like the body sheets. Frame 0 = holding it; the rest play on an attack
+## (melee: wind-up, hit, follow-through; gun: the shot, the recoil).
+@export var attack_overlay: Texture2D
+## The same for enemies (black-suit sleeves).
+@export var enemy_attack_overlay: Texture2D
+@export var attack_frames: int = 4
+## A star glint runs along the blade now and then, and often while it moves
+## (BladeShine). For the machete; a dagger would get it too.
+@export var blade_shine: bool = false
+
+
+## Size to draw the floor sprite at when it's held: never longer than
+## HELD_MAX_LENGTH px, so even the machine gun stays smaller than the body
+## (about 14 px across the shoulders).
+const HELD_MAX_LENGTH := 10.0
+const HELD_MAX_SCALE := 0.6
+
+
+func held_size() -> Vector2:
+	if floor_texture == null:
+		return Vector2.ZERO
+	var size := floor_size()
+	return size * minf(HELD_MAX_SCALE, HELD_MAX_LENGTH / size.x)
+
+
+## The floor sprite's size in room px.
+func floor_size() -> Vector2:
+	return floor_texture.get_size() * art_scale if floor_texture else Vector2.ZERO
+
+
+## Frame `index` of a strip of `count` frames laid side by side.
+static func frame_rect(texture: Texture2D, count: int, index: int) -> Rect2:
+	var w := texture.get_width() / float(count)
+	return Rect2(w * clampi(index, 0, count - 1), 0, w, texture.get_height())

@@ -41,12 +41,36 @@ func kick(strength: float, direction: Vector2) -> void:
 func make_noise(position: Vector2, loudness: float) -> void:
 	noise_made.emit(position, loudness)
 
+## What carries over from one floor of a level to the next: score, combo
+## and time. Set when you take the stairs, cleared when a new level starts,
+## and kept when you die, so you restart a floor with what you arrived with.
+var carried: Dictionary = {}
+
+
 ## Restarts the current room. Reloading a small scene takes well under
 ## 0.5 s, which is what the design asks for.
 func restart_room() -> void:
 	get_tree().paused = false
 	Engine.time_scale = 1.0
 	get_tree().reload_current_scene()
+
+
+## Starts another level from scratch (after a level is finished).
+func load_level(path: String) -> void:
+	carried = {}
+	get_tree().paused = false
+	Engine.time_scale = 1.0
+	get_tree().change_scene_to_file(path)
+
+
+## Up (or down) the stairs to another floor of the same level, which is a
+## scene of its own: `picture` fills the screen while it loads.
+func take_stairs(path: String, picture: Texture2D, carry: Dictionary) -> void:
+	carried = carry
+	var screen: CanvasLayer = load("res://scripts/ui/loading_screen.gd").new()
+	screen.name = "LoadingScreen"
+	add_child(screen)
+	screen.go(path, picture)
 
 
 ## Freezes the game for a split second to make hits feel heavy.

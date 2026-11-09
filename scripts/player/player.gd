@@ -30,6 +30,28 @@ signal died(weapon: String)
 const BOMB_SCENE := preload("res://scenes/weapons/bomb.tscn")
 const PICKUP_SCENE := preload("res://scenes/weapons/weapon_pickup.tscn")
 const BULLET_SCENE := preload("res://scenes/weapons/bullet.tscn")
+## A thrown weapon's speed (it slides about 120 px) and how far a tap looks
+## for an enemy to throw at.
+const THROW_SPEED := 320.0
+const THROW_ASSIST_RANGE := 120.0
+## Ground finisher: how close a downed enemy must be, how long it takes and
+## how many blows land (the kill comes with the last one).
+const FINISH_RANGE := 22.0
+const FINISH_TIME := 0.6
+## Attack motion (until the attack frames arrive): swings twist the torso
+## through the arc and lunge it forward; shots kick it back.
+const SWING_TWIST := 0.6     # radians either side of the aim
+const SWING_TIME := 0.1      # seconds the whip through the arc takes
+const SETTLE_TIME := 0.08    # then back to the aim
+const LUNGE := 3.5           # pixels forward at the hit
+const RECOIL := 2.0          # pixels back per shot
+const RECOIL_TIME := 0.08
+const FINISH_BLOWS := 3
+## Which HD animation each weapon uses.
+const HD_ANIMS := {&"fists": "punch", &"machete": "machete", &"pistol": "pistol", &"shotgun": "shotgun", &"machine_gun": "machinegun"}
+## Held weapons on the HD body: same size as on the old one (Fianso: people
+## stay the old size, the rooms should look big).
+const HD_SIZE := 1.0
 const CROSSHAIR_TEXTURE := preload("res://assets/ui/crosshair.png")
 
 ## All the tuning numbers. Edit res://data/player_settings.tres to change them.
@@ -38,14 +60,23 @@ const CROSSHAIR_TEXTURE := preload("res://assets/ui/crosshair.png")
 @export var accent_color: Color = Color(0.16, 0.94, 1.0) # neon cyan
 
 @export_group("Look")
-## Sprite sheets: the comedylife top-down character template (one row of
-## 38 frames, 64 x 64, drawn facing up), recoloured pink and cyan and split
-## in two so the legs and torso can turn apart. Empty = placeholder shapes.
-## Frames: 0-1 idle, 2-11 walk, 12-23 rifle, 24-35 pistol, 36-37 die.
-@export var torso_sheet: Texture2D = preload("res://assets/characters/player_torso.png")
-@export var legs_sheet: Texture2D = preload("res://assets/characters/player_legs.png")
-## The whole body in one sheet, used for the corpse.
-@export var body_sheet: Texture2D = preload("res://assets/characters/player_body.png")
+## The Art Director's HD frames (assets/characters/hd/, see HdBody): "hero",
+## or empty for the old 64 px sheets below.
+@export var hd_character: String = "hero"
+## Room pixels walked per HD walk frame.
+@export var hd_stride_per_frame: float = 8.0
+## Sprite sheets: one row of 38 frames, 64 x 64, drawn facing up.
+## Frames: 0-1 idle, 2-11 walk, 12-23 melee, 24-35 pistol, 36-37 die.
+## The hero's frames are full-body (legs included), so his legs sheet is
+## empty; a sheet split into torso and legs also works (they turn apart).
+## Empty = placeholder shapes.
+@export var torso_sheet: Texture2D = preload("res://assets/characters/hero_torso.png")
+@export var legs_sheet: Texture2D = preload("res://assets/characters/hero_legs.png")
+## The body left on the floor: a single 64 x 64 dead pose, or a full
+## 38-frame sheet (then its die frame is used).
+@export var body_sheet: Texture2D = preload("res://assets/characters/hero_dead.png")
+## A thin outline round the player only, so you spot yourself at once.
+@export var outline_color: Color = Color("3ce0c8")
 ## Sheet pixels to room pixels (same as the enemies).
 @export var sprite_scale: float = 0.6
 ## Room pixels walked per walk-cycle frame.
@@ -53,6 +84,9 @@ const CROSSHAIR_TEXTURE := preload("res://assets/ui/crosshair.png")
 
 ## Set by main.gd. Can stay empty (keyboard only).
 var touch_controls: TouchControls
+## Set when the level takes over (walking up the stairs at the exit): you
+## walk this way on your own and the sticks and buttons do nothing.
+var auto_walk := Vector2.ZERO
 
 ## The direction the hitman is looking (always length 1). The torso shows it.
 var facing: Vector2 = Vector2.RIGHT
@@ -86,12 +120,24 @@ var _attack_state: AttackState = AttackState.READY
 var _attack_timer: float = 0.0
 var _attack_direction: Vector2 = Vector2.RIGHT
 var _swing_flash: float = 0.0   # how long the swing arc stays visible
+## The downed enemy you're sitting on and smashing (ground finisher), if any.
+var _finishing: Node2D
+var _finish_time: float = 0.0
+var _finish_blows: int = 0
 var _stride: float = 0.0   # distance walked, drives the step animation
 var _muzzle_flash: float = 0.0   # seconds the flash at the barrel stays visible
+var _pose_time: float = -1.0   # seconds since the last strike or shot (-1 = at rest)
+var _fire_anim: float = -1.0   # seconds into the weapon's fire / swing frames (-1 = none)
 var _crosshair: Sprite2D
 var _sprite: Sprite2D        # arms, body and head, on the torso (turns with the aim)
+var _arms: Sprite2D          # the weapon's arms + weapon frames, on top of the torso sprite
+var _shine := BladeShine.new()   # glint along a blade in hand
+var _glint: Node2D           # draws it, above the body
 var _legs_sprite: Sprite2D   # the feet, on the legs (turn with the walk)
 var _idle_time: float = 0.0
+var _hd: HdBody               # the HD body (whole body in one sprite)
+var _hd_attack: String = ""   # HD attack animation playing ("punch", "pistol"...)
+var _hd_attack_time: float = 0.0
 var _muzzle_light: Sprite2D   # the circle of light a shot casts around you
 var _light_time: float = 0.0
 
@@ -120,14 +166,29 @@ func _ready() -> void:
 	# The parts are plain nodes so art can later drop a sprite into each one.
 	_legs.draw.connect(_draw_legs)
 	_torso.draw.connect(_draw_torso)
-	if torso_sheet and legs_sheet:
+	if hd_character != "":
+		_hd = HdBody.new()
+		_hd.name = "HdBody"
+		_hd.setup(hd_character, outline_color)
+		add_child(_hd)
+		move_child(_hd, 0)   # under the muzzle fire and the crosshair
+		_hd.fit_collision()
+	elif torso_sheet and legs_sheet:
 		_legs_sprite = _make_sprite(legs_sheet)
 		_legs.add_child(_legs_sprite)
 		_sprite = _make_sprite(torso_sheet)
 		_sprite.show_behind_parent = true   # the gun in hand is drawn on top
+		_arms = Sprite2D.new()
+		_arms.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		_arms.visible = false
+		_sprite.add_child(_arms)
 		_torso.add_child(_sprite)
 	_muzzle_light = _make_light()
 	add_child(_muzzle_light)
+	_glint = Node2D.new()
+	_glint.z_index = 0   # drawn after the body; walls (z 1) still cover it
+	_glint.draw.connect(_draw_glint)
+	add_child(_glint)
 	_crosshair = Sprite2D.new()
 	_crosshair.texture = CROSSHAIR_TEXTURE
 	_crosshair.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
@@ -148,6 +209,7 @@ func _physics_process(delta: float) -> void:
 		request_attack(_keyboard_aim())   # ZERO = "nearest target", like a tap
 	if Input.is_action_just_pressed("throw_bomb"):
 		request_bomb(Vector2.ZERO)
+	_auto_fire()
 	_update_attack(delta)
 	_update_crosshair()
 	_update_tracers(delta)
@@ -160,12 +222,17 @@ func _physics_process(delta: float) -> void:
 # ---------------------------------------------------------------- movement
 
 func _read_move_input() -> Vector2:
+	if auto_walk != Vector2.ZERO:
+		return auto_walk
 	if touch_controls and touch_controls.move_vector != Vector2.ZERO:
 		return touch_controls.move_vector.rotated(view_rotation)
 	return Input.get_vector("move_left", "move_right", "move_up", "move_down").rotated(view_rotation)
 
 
 func _update_movement(delta: float) -> void:
+	if _finishing:
+		velocity = Vector2.ZERO   # sitting on an enemy: you can't move
+		return
 	var input := _read_move_input()
 	if input != Vector2.ZERO:
 		# Fixed speed in M1: the stick only chooses the direction.
@@ -179,7 +246,9 @@ func _update_movement(delta: float) -> void:
 	if velocity.length() >= _recent_speed or _recent_speed_age > RECENT_SPEED_WINDOW:
 		_recent_speed = velocity.length()
 		_recent_speed_age = 0.0
+	var was_at := global_position
 	move_and_slide()   # moves the body and stops it at walls
+	_feet.update(self, global_position, global_position - was_at)
 
 
 # ------------------------------------------------------------------ aiming
@@ -190,6 +259,8 @@ func _keyboard_aim() -> Vector2:
 
 ## The direction the player is actively aiming, or ZERO when not aiming.
 func get_aim_input() -> Vector2:
+	if auto_walk != Vector2.ZERO:
+		return Vector2.ZERO   # look where you're walking
 	if touch_controls and touch_controls.aim_vector != Vector2.ZERO:
 		return touch_controls.aim_vector.normalized().rotated(view_rotation)
 	return _keyboard_aim().normalized().rotated(view_rotation)
@@ -206,10 +277,43 @@ func _update_facing() -> void:
 		facing = velocity.normalized()      # ...otherwise face where you walk
 
 
+## Code-driven attack motion. Melee: in the wind-up the torso twists back
+## to one side, at the hit it whips through to the other and lunges forward,
+## then settles. Gun: each shot kicks the torso (and the gun) back a little.
+func _update_attack_pose(delta: float) -> void:
+	var twist := 0.0
+	var shift := 0.0
+	if _pose_time >= 0.0:
+		_pose_time += delta
+	if has_gun():
+		if _pose_time >= 0.0 and _pose_time < RECOIL_TIME:
+			shift = -RECOIL * (1.0 - _pose_time / RECOIL_TIME)
+	elif _attack_state == AttackState.WINDUP and weapon.windup_time > 0.0:
+		var t := 1.0 - _attack_timer / weapon.windup_time
+		twist = -SWING_TWIST * t
+		shift = -1.0 * t
+	elif _pose_time >= 0.0 and _pose_time < SWING_TIME + SETTLE_TIME:
+		var t := _pose_time / SWING_TIME
+		if t < 1.0:
+			twist = lerpf(-SWING_TWIST, SWING_TWIST, ease(t, 0.4))   # fast whip
+			shift = LUNGE * sin(t * PI * 0.5)
+		else:
+			var back := 1.0 - (_pose_time - SWING_TIME) / SETTLE_TIME
+			twist = SWING_TWIST * back   # settle back to the aim
+			shift = LUNGE * back
+	if _pose_time >= SWING_TIME + SETTLE_TIME:
+		_pose_time = -1.0
+	if weapon.attack_overlay:
+		twist = 0.0   # the arm frames do the swinging
+	_torso.rotation += twist
+	_torso.position = facing * shift
+
+
 ## Turns the two body parts. The torso snaps to the aim; the legs turn
 ## smoothly toward the way we move, and ignore the aim completely.
 func _update_body(delta: float) -> void:
 	_torso.rotation = facing.angle()   # angle() = atan2(y, x)
+	_update_attack_pose(delta)
 	var speed := velocity.length()
 	if speed > settings.legs_idle_speed:
 		# How far to turn this frame. Using exp() makes the turn feel the same
@@ -221,16 +325,117 @@ func _update_body(delta: float) -> void:
 	else:
 		_stride = 0.0   # idle: feet back together under the torso
 	_legs.rotation = legs_angle
-	if _sprite:
+	if _hd:
+		_update_hd(delta, speed > settings.legs_idle_speed)
+	elif _sprite:
 		_idle_time += delta
 		var walking := speed > settings.legs_idle_speed
 		var step := int(_stride / stride_per_frame)
 		var idle_step := int(_idle_time * 2.0)   # slow breathing, 2 frames a second
-		if has_gun():
+		if has_gun() and not weapon.attack_overlay:
 			_sprite.frame = PISTOL_WALK_FRAMES[step % 10] if walking else PISTOL_IDLE_FRAMES[idle_step % 2]
 		else:
 			_sprite.frame = WALK_FRAMES[step % 10] if walking else IDLE_FRAMES[idle_step % 2]
 		_legs_sprite.frame = WALK_FRAMES[step % 10] if walking else IDLE_FRAMES[0]
+		_update_arms()
+
+
+## HD body: the attack playing, else the gun held up while standing, the
+## walk while moving, or standing still.
+func _update_hd(delta: float, walking: bool) -> void:
+	_hd.face(facing)
+	if _hd_attack != "":
+		_hd_attack_time += delta
+		if _hd_attack_time >= _hd.length(_hd_attack) and not _finishing:
+			_hd_attack = ""
+	if _hd_attack != "":
+		_hd.show_anim(_hd_attack, _hd.frame_at(_hd_attack, _hd_attack_time))
+	elif has_gun() and not walking and _hd.has_anim(_weapon_anim()):
+		_hd.show_anim(_weapon_anim(), 0)   # aiming, gun up
+	elif walking:
+		_hd.show_anim("walk", int(_stride / hd_stride_per_frame) % _hd.frame_count("walk"))
+	else:
+		_hd.show_anim("idle", 0)
+	if weapon.blade_shine:
+		_shine.update(delta, walking or _hd_attack != "")
+	_torso.queue_redraw()
+	_glint.queue_redraw()
+
+
+## Where a weapon held in hand is drawn on the HD body (torso space, +x =
+## forward): a gun out in front, a blade in the right hand.
+func _held_rect() -> Rect2:
+	var size := weapon.held_size() * HD_SIZE
+	return Rect2(Vector2(2, -size.y / 2.0) if has_gun() else Vector2(0, 7 - size.y / 2.0), size)
+
+
+## How far ahead of you the gun's barrel is drawn.
+func _muzzle_distance() -> float:
+	return 12.0
+
+
+## The HD animation for the weapon in hand.
+func _weapon_anim() -> String:
+	return HD_ANIMS.get(weapon.id, "punch")
+
+
+func _start_hd_attack() -> void:
+	if _hd and _hd.has_anim(_weapon_anim()):
+		_hd_attack = _weapon_anim()
+		_hd_attack_time = 0.0
+
+
+## True while the HD frames show the weapon (attacking, or a gun held up).
+func _hd_shows_weapon() -> bool:
+	return _hd.current.ends_with(_weapon_anim())
+
+
+## The weapon's arm frames on top of the torso. A weapon in hand always shows
+## (frame 0); bare fists only while punching. Melee: wind-up, hit,
+## follow-through. Gun: the shot, then the recoil.
+func _update_arms() -> void:
+	var art := weapon.attack_overlay
+	var frame := -1
+	if art == null:
+		pass
+	elif has_gun():
+		frame = 0
+		if _pose_time >= 0.0 and _pose_time < RECOIL_TIME * 2.0:
+			frame = 1 if _pose_time < RECOIL_TIME * 0.6 else weapon.attack_frames - 1
+	else:
+		if _attack_state == AttackState.WINDUP or _finishing and _swing_flash <= 0.0:
+			frame = 1
+		elif _pose_time >= 0.0 and _pose_time < SWING_TIME + SETTLE_TIME:
+			frame = 2 if _pose_time < SWING_TIME * 0.6 else weapon.attack_frames - 1
+		elif _finishing:
+			frame = 2
+		elif weapon != settings.start_weapon:
+			frame = 0
+	_arms.visible = frame >= 0
+	if frame >= 0:
+		_arms.texture = art
+		_arms.hframes = weapon.attack_frames
+		_arms.frame = frame
+	if weapon.blade_shine:
+		var moving := velocity.length() > settings.legs_idle_speed or _pose_time >= 0.0 or _attack_state == AttackState.WINDUP or _finishing
+		_shine.update(get_physics_process_delta_time(), moving)
+	_glint.queue_redraw()
+
+
+## The blade glint, running along the blade in the current arm frame.
+func _draw_glint() -> void:
+	if _hd and _alive and weapon.blade_shine:
+		var points := _hd.blade_points(self) if _hd_shows_weapon() else HdBody.held_blade_points(weapon, _torso.transform, _held_rect())
+		if points.size() == 2:
+			_shine.draw(_glint, points[0], points[1], 2.5)
+		return
+	if not _alive or not weapon.blade_shine or _arms == null or not _arms.visible:
+		return
+	var line := BladeShine.blade_line(_arms.texture, weapon.attack_frames, _arms.frame)
+	if line.is_empty():
+		return
+	var to_me := get_global_transform().affine_inverse() * _arms.get_global_transform()
+	_shine.draw(_glint, to_me * line[0], to_me * line[1], 2.5)
 
 
 ## Aim assist: if a target sits close to the aim line, return the direction
@@ -268,8 +473,12 @@ func _find_target(direction: Vector2, max_distance: float, max_degrees: float) -
 ## Ask for an attack. `direction` = where to swing, or ZERO for a quick tap
 ## (swing at the nearest target in front, or straight ahead if there is none).
 func request_attack(direction: Vector2) -> void:
-	if not _alive or _attack_state != AttackState.READY:
-		return   # still swinging or recovering
+	if not _alive or _attack_state != AttackState.READY or _finishing or auto_walk != Vector2.ZERO:
+		return   # still swinging or recovering, or walking off up the stairs
+	var downed := _downed_enemy_here()
+	if downed:
+		_start_finisher(downed)
+		return
 	if direction == Vector2.ZERO:
 		var tap_range := weapon.reach if has_gun() else settings.tap_assist_radius
 		var target := _find_target(facing, tap_range, settings.tap_assist_degrees)
@@ -280,12 +489,17 @@ func request_attack(direction: Vector2) -> void:
 	facing = direction
 	_attack_state = AttackState.WINDUP
 	_attack_timer = weapon.windup_time
+	if not has_gun():
+		_start_hd_attack()
 	_last_attack = "gun" if has_gun() else "melee"
 	_last_attack_ms = Time.get_ticks_msec()
 
 
 func _update_attack(delta: float) -> void:
 	_swing_flash = maxf(_swing_flash - delta, 0.0)
+	if _finishing:
+		_update_finisher(delta)
+		return
 	if _attack_state == AttackState.READY:
 		return
 	_attack_timer -= delta
@@ -305,6 +519,8 @@ func _update_attack(delta: float) -> void:
 ## The moment the swing lands: hit every target inside the arc.
 func _strike() -> void:
 	_swing_flash = 0.08
+	_pose_time = 0.0
+	_start_fire_anim()
 	for target in _targets_in_swing(_attack_direction):
 		target.take_hit(self, _attack_direction, "melee")
 		_play_kill_feedback(target)
@@ -334,11 +550,23 @@ func has_gun() -> bool:
 	return weapon != null and weapon.kind == WeaponData.Kind.GUN
 
 
+## Automatic guns (the machine gun) keep firing while you hold the aim stick.
+func _auto_fire() -> void:
+	if not has_gun() or not weapon.automatic or _attack_state != AttackState.READY:
+		return
+	var aim := get_aim_input()
+	if aim != Vector2.ZERO:
+		request_attack(aim.rotated(-view_rotation))   # request_attack turns it back
+
+
 ## Fires the gun: each bullet flies across the room (Bullet) and kills the
 ## first target it meets, unless a wall or a closed door stops it first.
 func _fire() -> void:
 	ammo -= 1
 	_muzzle_flash = 0.05
+	_pose_time = 0.0
+	_start_fire_anim()
+	_start_hd_attack()
 	_light_time = LIGHT_TIME
 	for i in maxi(weapon.pellets, 1):
 		var spread := deg_to_rad(randf_range(-weapon.spread_degrees, weapon.spread_degrees))
@@ -414,6 +642,84 @@ func try_pick_up(pickup: WeaponPickup) -> bool:
 	return true
 
 
+# ---------------------------------------------------------- ground finisher
+
+## A knocked-down enemy (door, thrown weapon) you're standing on, if any.
+func _downed_enemy_here() -> Node2D:
+	for enemy in get_tree().get_nodes_in_group("enemies"):
+		if enemy.has_method("is_down") and enemy.is_down() \
+				and enemy.global_position.distance_to(global_position) <= FINISH_RANGE:
+			return enemy
+	return null
+
+
+## Attack while standing on a downed enemy: you get on top of it and smash
+## its head (FINISH_BLOWS blows in FINISH_TIME), then it dies. You can't
+## move meanwhile, so its friends can get you: that's the risk.
+func _start_finisher(enemy: Node2D) -> void:
+	_finishing = enemy
+	_finish_time = 0.0
+	_finish_blows = 0
+	enemy.pinned = true
+	global_position = enemy.global_position   # on top of it
+	facing = enemy.facing   # its head is that way: that's where the blows land
+	_attack_direction = facing
+	_last_attack = "melee"
+	_last_attack_ms = Time.get_ticks_msec()
+
+
+func _update_finisher(delta: float) -> void:
+	if not is_instance_valid(_finishing) or not _finishing.is_alive():
+		_finishing = null
+		return
+	_finish_time += delta
+	velocity = Vector2.ZERO
+	var due := int(_finish_time / (FINISH_TIME / FINISH_BLOWS))
+	while _finish_blows < mini(due, FINISH_BLOWS):
+		_finish_blows += 1
+		_swing_flash = 0.06
+		_pose_time = 0.0
+		_start_hd_attack()
+		Game.shake(3.0, _attack_direction)
+	if _finish_blows >= FINISH_BLOWS:
+		var enemy := _finishing
+		_finishing = null
+		enemy.pinned = false
+		enemy.take_hit(self, _attack_direction, "melee")
+		_play_kill_feedback(enemy)
+		_attack_state = AttackState.RECOVERY
+		_attack_timer = weapon.recovery_time
+
+
+func is_finishing() -> bool:
+	return _finishing != null
+
+
+## THROW: hurls what you hold (aimed, dragged, or at the nearest enemy in
+## front). It knocks down the first enemy it hits, so you can finish them,
+## then lies on the floor with its ammo. You're left with your fists.
+func request_throw(direction: Vector2) -> void:
+	if not _alive or weapon == settings.start_weapon or auto_walk != Vector2.ZERO:
+		return
+	if direction == Vector2.ZERO:
+		var aim := get_aim_input()
+		direction = aim if aim != Vector2.ZERO else facing
+		var target := _find_target(direction, THROW_ASSIST_RANGE, settings.tap_assist_degrees)
+		if target:
+			direction = global_position.direction_to(target.global_position)
+	else:
+		direction = direction.normalized().rotated(view_rotation)
+	facing = direction.normalized()
+	var thrown: WeaponPickup = PICKUP_SCENE.instantiate()
+	thrown.weapon = weapon
+	thrown.ammo = maxi(ammo, 0)
+	thrown.ignore_player = true
+	thrown.thrower = self
+	get_parent().add_child(thrown)
+	thrown.fling(global_position + facing * 6.0, facing, THROW_SPEED)
+	equip(settings.start_weapon, -1)
+
+
 func _drop_weapon(direction: Vector2) -> void:
 	var dropped: WeaponPickup = PICKUP_SCENE.instantiate()
 	dropped.weapon = weapon
@@ -423,8 +729,16 @@ func _drop_weapon(direction: Vector2) -> void:
 	equip(settings.start_weapon, -1)
 
 
+func _start_fire_anim() -> void:
+	_fire_anim = 0.0 if weapon.fire_texture else -1.0
+
+
 func _update_tracers(delta: float) -> void:
 	_muzzle_flash = maxf(_muzzle_flash - delta, 0.0)
+	if _fire_anim >= 0.0:
+		_fire_anim += delta
+		if weapon.fire_texture == null or _fire_anim * weapon.fire_fps >= weapon.fire_frames:
+			_fire_anim = -1.0
 	_light_time = maxf(_light_time - delta, 0.0)
 	_muzzle_light.visible = _light_time > 0.0
 	_muzzle_light.modulate.a = _light_time / LIGHT_TIME
@@ -492,7 +806,7 @@ func _play_kill_feedback(target: Node2D) -> void:
 ## Throw a bomb. `direction` = where to throw, or ZERO for "where I'm aiming,
 ## or facing if I'm not aiming".
 func request_bomb(direction: Vector2) -> void:
-	if not _alive or bombs_left <= 0:
+	if not _alive or bombs_left <= 0 or auto_walk != Vector2.ZERO:
 		return
 	if direction == Vector2.ZERO:
 		var aim := get_aim_input()
@@ -508,6 +822,9 @@ func request_bomb(direction: Vector2) -> void:
 
 
 # ------------------------------------------------------------------- death
+
+var _feet := BloodyFeet.new()
+
 
 func is_alive() -> bool:
 	return _alive
@@ -527,6 +844,8 @@ func take_hit(attacker: Node2D, direction: Vector2, weapon: String) -> void:
 	if _sprite:
 		_sprite.visible = false
 		_legs_sprite.visible = false
+	if _hd:
+		_hd.visible = false   # the gore layer plays the death from here
 	died.emit(weapon)
 	Game.shake(settings.big_shake)
 	if settings.big_vibration_ms > 0:
@@ -576,26 +895,47 @@ func _draw() -> void:
 	if not _alive:
 		return   # the body is painted on the floor by the gore layer
 
-	# Muzzle flash at the end of the barrel.
-	if _muzzle_flash > 0.0:
-		draw_circle(_attack_direction * 12.0, 3.0, Color(1, 0.95, 0.6))
-	if has_gun():
-		return   # the swing arcs below are for melee only
+	# Ground finisher (placeholder until the Art Director's frames): the
+	# torso bobs with each blow and the head end of the body flashes.
+	if _finishing:
+		_torso.scale = Vector2.ONE * (1.25 if _swing_flash > 0.0 else 1.0)
+		if _swing_flash > 0.0:
+			draw_circle(facing * 8.0, 5.0, Color(1, 0.15, 0.2, 0.9))
+			draw_circle(facing * 8.0, 2.5, Color(1, 1, 1))
+		return
+	_torso.scale = Vector2.ONE
+	var angle := _attack_direction.angle()
+	if _fire_anim >= 0.0 and weapon.fire_texture and (has_gun() or _hd == null):
+		var rect := WeaponData.frame_rect(weapon.fire_texture, weapon.fire_frames, int(_fire_anim * weapon.fire_fps))
+		if has_gun():
+			# Muzzle fire, starting at the end of the barrel.
+			draw_set_transform(_attack_direction * _muzzle_distance(), angle)
+			var drawn := rect.size * weapon.art_scale
+			draw_texture_rect_region(weapon.fire_texture, Rect2(Vector2(0, -drawn.y / 2.0), drawn), rect)
+		else:
+			# The swing streak, sweeping through the arc.
+			var grow := weapon.reach * 0.9 / rect.size.x
+			draw_set_transform(_attack_direction * weapon.reach * 0.5, angle, Vector2(grow, grow))
+			draw_texture_rect_region(weapon.fire_texture, Rect2(-rect.size / 2.0, rect.size), rect)
+		draw_set_transform(Vector2.ZERO)
+	elif _muzzle_flash > 0.0:
+		draw_circle(_attack_direction * _muzzle_distance(), 3.0, Color(1, 0.95, 0.6))   # no art: a plain flash
+	if has_gun() or _hd:
+		return   # the swing arcs below are for melee only (the HD frames show the swing)
 
 	# Wind-up: a thin outline of where the swing is about to land.
 	var half_arc := deg_to_rad(weapon.arc_degrees * 0.5)
-	var angle := _attack_direction.angle()
 	if _attack_state == AttackState.WINDUP:
 		draw_arc(Vector2.ZERO, weapon.reach, angle - half_arc, angle + half_arc, 12, Color(1, 1, 1, 0.4), 1.0)
 	# The swing itself: a bright, thick arc for a few frames.
-	if _swing_flash > 0.0:
+	if _swing_flash > 0.0 and weapon.fire_texture == null:
 		draw_arc(Vector2.ZERO, weapon.reach * 0.8, angle - half_arc, angle + half_arc, 12, Color(1, 1, 1, 0.95), 5.0)
 
 
 # Both parts are drawn pointing right (+x). Their node rotation turns them.
 
 func _draw_legs() -> void:
-	if not _alive:
+	if not _alive or _hd:
 		return
 	# Feet swing forward and back in turn, one full cycle per stride_length.
 	var step := sin(_stride / maxf(settings.stride_length, 1.0) * TAU) * 6.0
@@ -609,8 +949,21 @@ func _draw_legs() -> void:
 func _draw_torso() -> void:
 	if not _alive:
 		return
+	if _hd:
+		# Walking or standing with a weapon: it's in his hand (the frames
+		# only show it while attacking or holding a gun up).
+		if weapon != settings.start_weapon and weapon.floor_texture and not _hd_shows_weapon():
+			_torso.draw_texture_rect(weapon.floor_texture, _held_rect(), false)
+		return
 	if _sprite:
-		if has_gun():
+		if weapon.attack_overlay:
+			pass   # the arm frames show the weapon in hand
+		elif weapon.floor_texture and weapon != settings.start_weapon:
+			# Gun held out in both hands; a blade in the right hand.
+			var size := weapon.held_size()
+			var at := Vector2(4, -size.y / 2.0) if has_gun() else Vector2(1, 4 - size.y / 2.0)
+			_torso.draw_texture_rect(weapon.floor_texture, Rect2(at, size), false)
+		elif has_gun():
 			_torso.draw_rect(Rect2(5, -1.25, 6, 2.5), weapon.color)   # held out in both hands
 		elif weapon != settings.start_weapon:
 			# A blade in the right hand, pointing forward.
@@ -638,13 +991,18 @@ func _make_sprite(texture: Texture2D) -> Sprite2D:
 	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	var material := ShaderMaterial.new()
 	material.shader = preload("res://shaders/outline.gdshader")
+	material.set_shader_parameter("outline_color", outline_color)
 	sprite.material = material
 	return sprite
 
 
 ## The body the gore layer paints when you die: the template's "die" pose.
 func _corpse() -> Dictionary:
+	if _hd:
+		# The Art Director's death, then its dead pose: one of four, at random.
+		return {"pixel": _hd.who, "size": _hd.size(), "variant": HdBody.death_variant(_hd.who)}
 	if body_sheet == null:
 		return {}
-	var region := Rect2(DIE_FRAMES[1] * 64, 0, 64, 64)
+	var frame: int = 0 if body_sheet.get_width() <= 64 else DIE_FRAMES[1]
+	var region := Rect2(frame * 64, 0, 64, 64)
 	return {"texture": body_sheet, "region": region, "burst_region": region, "scale": sprite_scale}

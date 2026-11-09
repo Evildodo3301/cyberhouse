@@ -1,0 +1,37 @@
+[gd_resource type="Resource" script_class="WeaponData" load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://scripts/weapons/weapon_data.gd" id="1_weapon"]
+[ext_resource type="Texture2D" path="res://assets/weapons/machinegun_floor.png" id="2_floor"]
+[ext_resource type="Texture2D" path="res://assets/weapons/machinegun_icon.png" id="3_icon"]
+[ext_resource type="Texture2D" path="res://assets/weapons/machinegun_thrown_4f.png" id="4_thrown"]
+[ext_resource type="Texture2D" path="res://assets/weapons/machinegun_muzzle_3f_loop.png" id="5_fire"]
+[ext_resource type="Texture2D" path="res://assets/attacks/player_machinegun_recoil_3f.png" id="6_arms"]
+[ext_resource type="Texture2D" path="res://assets/attacks/enemy_machinegun_recoil_3f.png" id="7_enemy_arms"]
+
+[resource]
+script = ExtResource("1_weapon")
+id = &"machine_gun"
+display_name = "MACHINE GUN"
+kind = 1
+reach = 64.0
+bullet_speed = 420.0
+windup_time = 0.0
+recovery_time = 0.09
+ammo = 24
+pellets = 1
+spread_degrees = 6.0
+noise_loudness = 1.0
+shake = 2.5
+void_flash = 0.6
+automatic = true
+color = Color(0.55, 0.95, 0.75, 1)
+art_scale = 0.3333333
+floor_texture = ExtResource("2_floor")
+icon = ExtResource("3_icon")
+thrown_texture = ExtResource("4_thrown")
+fire_texture = ExtResource("5_fire")
+fire_frames = 3
+fire_fps = 30.0
+attack_overlay = ExtResource("6_arms")
+enemy_attack_overlay = ExtResource("7_enemy_arms")
+attack_frames = 3

@@ -36,6 +36,10 @@ func _ready() -> void:
 	_combo_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_combo_bar)
 	Game.enemy_died.connect(_on_kill)
+	# Arrived from the floor below: carry on from where you were.
+	score = Game.carried.get("score", 0)
+	combo = Game.carried.get("combo", 0)
+	_combo_left = Game.carried.get("combo_left", 0.0)
 	_refresh()
 
 

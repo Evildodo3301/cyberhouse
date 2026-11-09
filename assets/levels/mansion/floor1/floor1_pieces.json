@@ -1,0 +1,577 @@
+{
+ "scale": 0.7111111111111111,
+ "size": [
+  800,
+  456
+ ],
+ "tile_px": 8,
+ "pieces": [
+  {
+   "name": "sofa_top",
+   "x": 363,
+   "y": 157,
+   "w": 66,
+   "h": 30,
+   "sort_y": 187,
+   "collision": [
+    363,
+    166,
+    66,
+    21
+   ]
+  },
+  {
+   "name": "sofa_side_1",
+   "x": 335,
+   "y": 177,
+   "w": 26,
+   "h": 47,
+   "sort_y": 224,
+   "collision": [
+    335,
+    191,
+    26,
+    33
+   ]
+  },
+  {
+   "name": "coffee_table_1",
+   "x": 371,
+   "y": 192,
+   "w": 50,
+   "h": 28,
+   "sort_y": 220,
+   "collision": [
+    371,
+    200,
+    50,
+    20
+   ]
+  },
+  {
+   "name": "side_table_decanter_1",
+   "x": 340,
+   "y": 157,
+   "w": 19,
+   "h": 21,
+   "sort_y": 178,
+   "collision": [
+    340,
+    163,
+    19,
+    15
+   ]
+  },
+  {
+   "name": "side_table_globe_1",
+   "x": 433,
+   "y": 156,
+   "w": 20,
+   "h": 29,
+   "sort_y": 185,
+   "collision": [
+    433,
+    165,
+    20,
+    20
+   ]
+  },
+  {
+   "name": "armchair_red_1",
+   "x": 435,
+   "y": 188,
+   "w": 22,
+   "h": 31,
+   "sort_y": 219,
+   "collision": [
+    435,
+    197,
+    22,
+    22
+   ]
+  },
+  {
+   "name": "side_table_lamp",
+   "x": 340,
+   "y": 249,
+   "w": 19,
+   "h": 24,
+   "sort_y": 273,
+   "collision": [
+    340,
+    256,
+    19,
+    17
+   ]
+  },
+  {
+   "name": "sofa_mid",
+   "x": 362,
+   "y": 252,
+   "w": 67,
+   "h": 29,
+   "sort_y": 281,
+   "collision": [
+    362,
+    261,
+    67,
+    20
+   ]
+  },
+  {
+   "name": "side_table_decanter_2",
+   "x": 433,
+   "y": 255,
+   "w": 20,
+   "h": 28,
+   "sort_y": 283,
+   "collision": [
+    433,
+    263,
+    20,
+    20
+   ]
+  },
+  {
+   "name": "sofa_side_2",
+   "x": 334,
+   "y": 274,
+   "w": 27,
+   "h": 45,
+   "sort_y": 319,
+   "collision": [
+    334,
+    288,
+    27,
+    31
+   ]
+  },
+  {
+   "name": "coffee_table_2",
+   "x": 371,
+   "y": 287,
+   "w": 50,
+   "h": 28,
+   "sort_y": 315,
+   "collision": [
+    371,
+    295,
+    50,
+    20
+   ]
+  },
+  {
+   "name": "armchair_red_2",
+   "x": 435,
+   "y": 286,
+   "w": 22,
+   "h": 31,
+   "sort_y": 317,
+   "collision": [
+    435,
+    295,
+    22,
+    22
+   ]
+  },
+  {
+   "name": "sofa_bottom",
+   "x": 362,
+   "y": 316,
+   "w": 67,
+   "h": 29,
+   "sort_y": 345,
+   "collision": [
+    362,
+    325,
+    67,
+    20
+   ]
+  },
+  {
+   "name": "side_table_decanters_3",
+   "x": 339,
+   "y": 316,
+   "w": 22,
+   "h": 29,
+   "sort_y": 345,
+   "collision": [
+    339,
+    325,
+    22,
+    20
+   ]
+  },
+  {
+   "name": "statue",
+   "x": 277,
+   "y": 101,
+   "w": 14,
+   "h": 31,
+   "sort_y": 132,
+   "collision": [
+    277,
+    110,
+    14,
+    22
+   ]
+  },
+  {
+   "name": "console_decanters",
+   "x": 311,
+   "y": 103,
+   "w": 40,
+   "h": 29,
+   "sort_y": 132,
+   "collision": [
+    311,
+    112,
+    40,
+    20
+   ]
+  },
+  {
+   "name": "chair_red_n1",
+   "x": 354,
+   "y": 107,
+   "w": 15,
+   "h": 25,
+   "sort_y": 132,
+   "collision": [
+    354,
+    114,
+    15,
+    18
+   ]
+  },
+  {
+   "name": "chair_red_n2",
+   "x": 424,
+   "y": 107,
+   "w": 16,
+   "h": 25,
+   "sort_y": 132,
+   "collision": [
+    424,
+    114,
+    16,
+    18
+   ]
+  },
+  {
+   "name": "console_vase",
+   "x": 445,
+   "y": 103,
+   "w": 38,
+   "h": 31,
+   "sort_y": 134,
+   "collision": [
+    445,
+    112,
+    38,
+    22
+   ]
+  },
+  {
+   "name": "globe_stand",
+   "x": 506,
+   "y": 104,
+   "w": 16,
+   "h": 30,
+   "sort_y": 134,
+   "collision": [
+    506,
+    113,
+    16,
+    21
+   ]
+  },
+  {
+   "name": "console_west",
+   "x": 271,
+   "y": 265,
+   "w": 16,
+   "h": 59,
+   "sort_y": 324,
+   "collision": [
+    271,
+    283,
+    16,
+    41
+   ]
+  },
+  {
+   "name": "plant_sw",
+   "x": 271,
+   "y": 366,
+   "w": 18,
+   "h": 28,
+   "sort_y": 394,
+   "collision": [
+    271,
+    374,
+    18,
+    20
+   ]
+  },
+  {
+   "name": "globe_table_s",
+   "x": 313,
+   "y": 368,
+   "w": 18,
+   "h": 26,
+   "sort_y": 394,
+   "collision": [
+    313,
+    376,
+    18,
+    18
+   ]
+  },
+  {
+   "name": "console_east",
+   "x": 511,
+   "y": 268,
+   "w": 17,
+   "h": 47,
+   "sort_y": 315,
+   "collision": [
+    511,
+    282,
+    17,
+    33
+   ]
+  },
+  {
+   "name": "armchair_red_se",
+   "x": 482,
+   "y": 366,
+   "w": 22,
+   "h": 28,
+   "sort_y": 394,
+   "collision": [
+    482,
+    374,
+    22,
+    20
+   ]
+  },
+  {
+   "name": "plant_se",
+   "x": 508,
+   "y": 366,
+   "w": 19,
+   "h": 28,
+   "sort_y": 394,
+   "collision": [
+    508,
+    374,
+    19,
+    20
+   ]
+  },
+  {
+   "name": "plant_office",
+   "x": 552,
+   "y": 135,
+   "w": 18,
+   "h": 31,
+   "sort_y": 166,
+   "collision": [
+    552,
+    144,
+    18,
+    22
+   ]
+  },
+  {
+   "name": "desk_chair",
+   "x": 619,
+   "y": 146,
+   "w": 28,
+   "h": 33,
+   "sort_y": 179,
+   "collision": [
+    619,
+    156,
+    28,
+    23
+   ]
+  },
+  {
+   "name": "dog_bed",
+   "x": 694,
+   "y": 147,
+   "w": 24,
+   "h": 20,
+   "sort_y": 167,
+   "collision": [
+    694,
+    153,
+    24,
+    14
+   ]
+  },
+  {
+   "name": "exec_desk",
+   "x": 593,
+   "y": 178,
+   "w": 81,
+   "h": 50,
+   "sort_y": 228,
+   "collision": [
+    593,
+    193,
+    81,
+    35
+   ]
+  },
+  {
+   "name": "office_side_chair",
+   "x": 552,
+   "y": 275,
+   "w": 17,
+   "h": 33,
+   "sort_y": 308,
+   "collision": [
+    552,
+    285,
+    17,
+    23
+   ]
+  },
+  {
+   "name": "office_cabinet",
+   "x": 704,
+   "y": 272,
+   "w": 14,
+   "h": 27,
+   "sort_y": 299,
+   "collision": [
+    704,
+    280,
+    14,
+    19
+   ]
+  },
+  {
+   "name": "office_lamp_table",
+   "x": 704,
+   "y": 300,
+   "w": 14,
+   "h": 31,
+   "sort_y": 331,
+   "collision": [
+    704,
+    309,
+    14,
+    22
+   ]
+  },
+  {
+   "name": "office_armchair",
+   "x": 696,
+   "y": 338,
+   "w": 22,
+   "h": 24,
+   "sort_y": 362,
+   "collision": [
+    696,
+    345,
+    22,
+    17
+   ]
+  },
+  {
+   "name": "kitchen_island",
+   "x": 138,
+   "y": 179,
+   "w": 72,
+   "h": 37,
+   "sort_y": 216,
+   "collision": [
+    138,
+    190,
+    72,
+    26
+   ]
+  },
+  {
+   "name": "dining_set",
+   "x": 116,
+   "y": 251,
+   "w": 98,
+   "h": 70,
+   "sort_y": 321,
+   "collision": [
+    116,
+    251,
+    98,
+    70
+   ]
+  },
+  {
+   "name": "plant_kitchen",
+   "x": 72,
+   "y": 307,
+   "w": 20,
+   "h": 28,
+   "sort_y": 335,
+   "collision": [
+    72,
+    315,
+    20,
+    20
+   ]
+  },
+  {
+   "name": "lounger_1",
+   "x": 746,
+   "y": 23,
+   "w": 45,
+   "h": 24,
+   "sort_y": 47,
+   "collision": [
+    746,
+    30,
+    45,
+    17
+   ]
+  },
+  {
+   "name": "lounger_2",
+   "x": 746,
+   "y": 47,
+   "w": 45,
+   "h": 24,
+   "sort_y": 71,
+   "collision": [
+    746,
+    54,
+    45,
+    17
+   ]
+  },
+  {
+   "name": "lounger_3",
+   "x": 746,
+   "y": 80,
+   "w": 45,
+   "h": 25,
+   "sort_y": 105,
+   "collision": [
+    746,
+    87,
+    45,
+    18
+   ]
+  }
+ ],
+ "px_per_room": 3,
+ "texture_scale": 0.3333333333333333,
+ "size_tex": [
+  2400,
+  1368
+ ],
+ "note": "x, y, w, h, sort_y and collision are ROOM px (same as 1x). Draw textures at scale 1/px_per_room."
+}

@@ -5,6 +5,9 @@ extends Node2D
 signal reached
 
 var rect: Rect2
+## A staircase exit: the way you walk off once you step on it (ZERO = an
+## ordinary exit, the level ends as soon as you reach it).
+var walk := Vector2.ZERO
 var open: bool = false
 var _pulse: float = 0.0
 var _done: bool = false
@@ -33,4 +36,4 @@ func _draw() -> void:
 	var glow := 0.25 + 0.2 * sin(_pulse * 4.0) if open else 0.08
 	draw_rect(rect, Color(0.2, 1.0, 0.5, glow))
 	draw_rect(rect, Color(0.2, 1.0, 0.5, 0.9 if open else 0.3), false, 1.0)
-	draw_string(ThemeDB.fallback_font, rect.position + Vector2(-12, -3), "EXIT", HORIZONTAL_ALIGNMENT_CENTER, rect.size.x + 24, 8, Color(0.2, 1.0, 0.5, 0.9 if open else 0.4))
+	draw_string(ThemeDB.fallback_font, rect.position + Vector2(-12, -3), "STAIRS" if walk != Vector2.ZERO else "EXIT", HORIZONTAL_ALIGNMENT_CENTER, rect.size.x + 24, 8, Color(0.2, 1.0, 0.5, 0.9 if open else 0.4))

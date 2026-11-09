@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="EnemySettings" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/enemies/enemy_settings.gd" id="1_settings"]
+
+[resource]
+script = ExtResource("1_settings")
+patrol_speed = 50.0
+chase_speed = 125.0
+patrol_pause = 0.5
+reaction_time = 0.4
+notice_whole_room = false
+vision_degrees = 100.0
+vision_range = 112.0
+close_awareness_range = 12.0
+door_alert_needs_sight = true
+lose_sight_time = 1.0
+attack_range = 16.0
+attack_windup = 0.14
+attack_recovery = 0.55
+attack_arc_degrees = 80.0
+charge_range = 48.0
+charge_speed = 1.2
+charge_time = 0.4
+charge_cooldown = 1.5

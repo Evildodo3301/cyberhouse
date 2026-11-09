@@ -682,5 +682,240 @@ func _initialize() -> void:
 	check(covered and came_out, "a gun enemy hides (COVER), then comes out shooting")
 	tracker.clear_room(room)
 
+	# 31. The machine gun fires on its own while you hold the aim stick.
+	await reload_room(true)
+	main = current_scene
+	player = main.get_node("Player")
+	main.get_node("GruntPatrol").free()
+	main.get_node("GruntGuard").free()
+	var mg: WeaponData = load("res://data/weapons/machine_gun.tres")
+	player.equip(mg, -1)
+	touch(1, Vector2(420, 300), true)
+	drag(1, Vector2(460, 300))
+	await wait_frames(40)
+	touch(1, Vector2(460, 300), false)
+	await wait_frames(2)
+	check(mg.automatic and player.ammo <= mg.ammo - 5, "holding the aim stick keeps the machine gun firing (%d of %d left)" % [player.ammo, mg.ammo])
+
+	# 32. An enemy with a machine gun fires a burst.
+	await reload_room(true)
+	main = current_scene
+	player = main.get_node("Player")
+	main.get_node("GruntPatrol").free()
+	guard = main.get_node("GruntGuard")
+	guard.carried_weapon = mg
+	player.global_position = guard.global_position + Vector2(-50, 0)
+	var burst := 0
+	for i in 60:
+		await wait_frames(1)
+		burst = maxi(burst, guard._burst_left)
+		if guard._struck and guard.state == 7:
+			break
+	check(burst == guard.BURST_SHOTS - 1, "a machine gun enemy fires a burst (%d more after the first)" % burst)
+
+	# 33. THROW: your weapon flies at the enemy and knocks it down, then lies there.
+	await reload_room(true)
+	main = current_scene
+	player = main.get_node("Player")
+	main.get_node("GruntPatrol").free()
+	guard = main.get_node("GruntGuard")
+	player.equip(load("res://data/weapons/pistol.tres"), 3)
+	player.global_position = guard.global_position + Vector2(-45, 0)
+	player.facing = Vector2.RIGHT
+	player.request_throw(Vector2.ZERO)
+	check(player.weapon.id == &"fists", "throwing leaves you with your fists")
+	var downed := false
+	for i in 30:
+		await wait_frames(1)
+		if guard.is_down():
+			downed = true
+			break
+	check(downed, "the thrown gun knocks the enemy down")
+	await wait_frames(20)
+	var thrown_gun := root.get_tree().get_nodes_in_group("pickups").filter(func(p): return p.name != "PistolPickup" and p.weapon.id == &"pistol")
+	check(thrown_gun.size() == 1 and thrown_gun[0].ammo == 3, "the gun lands on the floor with its ammo")
+
+	# 34. Ground finisher: attack while on the downed enemy to smash its head.
+	player.global_position = guard.global_position + Vector2(-10, 0)
+	await wait_frames(1)
+	player.request_attack(Vector2.ZERO)
+	check(player.is_finishing(), "attacking on a downed enemy starts the finisher")
+	await wait_frames(18)
+	check(guard.is_alive() and guard.is_down(), "it takes a moment: the enemy is still down mid-finisher")
+	touch(0, Vector2(100, 250), true)
+	drag(0, Vector2(140, 250))
+	var start_pos: Vector2 = player.global_position
+	await wait_frames(10)
+	check(player.global_position.distance_to(start_pos) < 1.0, "you can't move during the finisher")
+	await wait_frames(12)
+	touch(0, Vector2(140, 250), false)
+	check(not guard.is_alive() and not player.is_finishing(), "after about 0.6 s the enemy is dead")
+
+	# 35. Attacks play the HD frames; held weapons stay smaller than you.
+	await reload_room(false)
+	main = current_scene
+	player = main.get_node("Player")
+	player.global_position = Vector2(200, 200)
+	await wait_frames(2)
+	var hd: HdBody = player.get_node("HdBody")
+	player.equip(load("res://data/weapons/machete.tres"), -1)
+	await wait_frames(1)
+	check(hd.current == "hero_idle" and not player._hd_shows_weapon(), "a machete in hand is drawn in his hand at rest")
+	var swipe_frames := {}
+	player.request_attack(Vector2.RIGHT)
+	for i in 40:
+		await physics_frame
+		if hd.current == "hero_machete":
+			swipe_frames[hd.frame] = true
+	check(swipe_frames.size() >= 7, "a swing plays the machete swipe (%d of 9 frames)" % swipe_frames.size())
+	check(hd.current != "hero_machete", "then it settles back")
+	player.equip(load("res://data/weapons/pistol.tres"), 8)
+	await wait_frames(2)
+	var shot_frames := {}
+	player.request_attack(Vector2.RIGHT)
+	for i in 12:
+		await physics_frame
+		if hd.current == "hero_pistol":
+			shot_frames[hd.frame] = true
+	check(shot_frames.size() >= 2, "a shot plays the pistol frames %s" % [shot_frames.keys()])
+	player.equip(load("res://data/weapons/fists.tres"), -1)
+	await wait_frames(20)
+	check(hd.current == "hero_idle", "bare fists at rest: just standing")
+	player.request_attack(Vector2.RIGHT)
+	await wait_frames(2)
+	check(hd.current == "hero_punch", "a punch shows the punch frames")
+	var thug = load("res://scenes/enemies/grunt.tscn").instantiate()
+	thug.carried_weapon = load("res://data/weapons/machete.tres")
+	thug.position = Vector2(400, 60)
+	main.add_child(thug)
+	await wait_frames(3)
+	thug._enter(thug.State.ATTACK)
+	thug._update_hd(0.05)
+	check(thug.get_node("HdBody").current == "enemy_machete", "a machete enemy swings with the enemy machete frames")
+	var big_gun: WeaponData = load("res://data/weapons/machine_gun.tres")
+	check(big_gun.held_size().x * player.HD_SIZE <= 15.0, "the biggest held gun is shorter than you are wide (%.0f px)" % (big_gun.held_size().x * player.HD_SIZE))
+
+	# 36. The machete's blade glints: now and then at rest, often while it moves.
+	var machete_data: WeaponData = load("res://data/weapons/machete.tres")
+	check(machete_data.blade_shine and not load("res://data/weapons/pistol.tres").blade_shine, "the machete has blade shine, guns don't")
+	var lines := [BladeShine.blade_line(machete_data.floor_texture, 1, 0)]
+	for f in machete_data.attack_frames:
+		lines.append(BladeShine.blade_line(machete_data.attack_overlay, machete_data.attack_frames, f))
+		lines.append(BladeShine.blade_line(machete_data.enemy_attack_overlay, machete_data.attack_frames, f))
+	check(lines.all(func(l): return l.size() == 2 and l[0].distance_to(l[1]) >= 4.0), "the blade is found on the floor sprite and in every arm frame %s" % [lines.map(func(l): return snappedf(l[0].distance_to(l[1]), 0.1) if l.size() == 2 else -1)])
+	var resting := BladeShine.new()
+	var rest_glints := 0
+	var was_on := false
+	for i in 300:   # 5 s
+		resting.update(1.0 / 60.0, false)
+		if resting.active() and not was_on:
+			rest_glints += 1
+		was_on = resting.active()
+	var moving := BladeShine.new()
+	var move_glints := 0
+	was_on = false
+	for i in 300:
+		moving.update(1.0 / 60.0, true)
+		if moving.active() and not was_on:
+			move_glints += 1
+		was_on = moving.active()
+	check(rest_glints >= 2 and rest_glints <= 3, "at rest it glints every couple of seconds (%d in 5 s)" % rest_glints)
+	check(move_glints >= 10, "while it moves it keeps glinting (%d in 5 s)" % move_glints)
+
+	# 37. A doberman: growls when it spots you, runs you down faster than you
+	# can run, bites; one hit kills it and it drops nothing.
+	await reload_room(false)
+	main = current_scene
+	player = main.get_node("Player")
+	player.global_position = Vector2(150, 285)
+	var dog = load("res://scenes/enemies/grunt.tscn").instantiate()
+	dog.is_dog = true
+	dog.sheet = null
+	dog.settings = load("res://data/dog_settings.tres")
+	dog.position = Vector2(250, 285)
+	dog.start_facing_degrees = 180.0
+	main.add_child(dog)
+	await wait_frames(3)
+	check(dog.state == 1 and dog._bark_text == "GRR", "the dog growls when it spots you")
+	check(dog.settings.chase_speed > player.settings.move_speed, "it runs faster than you")
+	var bitten := false
+	for i in 120:
+		await physics_frame
+		if not player.is_alive():
+			bitten = true
+			break
+	check(bitten, "it runs you down and bites")
+	await reload_room(false)
+	main = current_scene
+	player = main.get_node("Player")
+	dog = load("res://scenes/enemies/grunt.tscn").instantiate()
+	dog.is_dog = true
+	dog.sheet = null
+	dog.settings = load("res://data/dog_settings.tres")
+	dog.position = player.global_position + Vector2(20, 0)
+	main.add_child(dog)
+	await wait_frames(2)
+	var old_pickups := get_nodes_in_group("pickups")
+	dog.take_hit(player, Vector2.RIGHT, "melee")
+	await wait_frames(10)
+	var dropped_by_dog := get_nodes_in_group("pickups").filter(func(p): return not old_pickups.has(p))
+	check(not dog.is_alive() and dropped_by_dog.is_empty(), "one hit kills it and it drops nothing")
+
+	# 38. Dying: legs twitch, blood pumps out in spurts, a pool spreads; then
+	# it is all painted into the floor. The blood setting turns it down.
+	var game = root.get_node("Game")
+	var dying_script = load("res://scripts/fx/dying_body.gd")
+	var gore_layer = main.get_node("Gore")
+	var dying_dog = gore_layer.get_children().filter(func(c): return c.get_script() == dying_script)
+	check(dying_dog.size() == 1 and dying_dog[0].corpse.get("pixel", "") == "dog", "the dog's body lies there dying (the doberman's pixel death)")
+	await reload_room(false)
+	main = current_scene
+	player = main.get_node("Player")
+	gore_layer = main.get_node("Gore")
+	var victim = load("res://scenes/enemies/grunt.tscn").instantiate()
+	victim.position = player.global_position + Vector2(40, 0)
+	main.add_child(victim)
+	await wait_frames(2)
+	victim.take_hit(player, Vector2.RIGHT, "melee")
+	var dying = gore_layer.get_children().filter(func(c): return c.get_script() == dying_script)
+	check(dying.size() == 1, "a kill leaves a dying body")
+	var twitches := {}
+	var most_drops := 0
+	var pool_at_half := 0.0
+	var watch_until := Time.get_ticks_msec() + 1200
+	while Time.get_ticks_msec() < watch_until:
+		await process_frame
+		twitches[snappedf(dying[0].leg_twitch(), 0.01)] = true
+		most_drops = maxi(most_drops, dying[0]._drops.size())
+	pool_at_half = dying[0].pool_radius()
+	check(twitches.size() > 5, "the legs shiver (%d different bends)" % twitches.size())
+	check(most_drops >= 4, "blood spurts out of the wound (%d drops in the air)" % most_drops)
+	var full_pool: float = dying_script._pool_radius_of(dying_script.POOL_LAST) if dying[0].is_pixel() else dying_script.POOL_FULL
+	check(pool_at_half > 3.0 and pool_at_half < full_pool, "the pool is still spreading (%.1f of %.1f px)" % [pool_at_half, full_pool])
+	await create_timer(dying_script.DURATION).timeout
+	check(gore_layer.get_children().filter(func(c): return c.get_script() == dying_script).is_empty() and gore_layer.kill_count == 1, "afterwards the body and pool are painted into the floor")
+	for level in [game.BloodLevel.REDUCED, game.BloodLevel.OFF]:
+		game.blood_level = level
+		await reload_room(false)
+		main = current_scene
+		player = main.get_node("Player")
+		gore_layer = main.get_node("Gore")
+		victim = load("res://scenes/enemies/grunt.tscn").instantiate()
+		victim.position = player.global_position + Vector2(40, 0)
+		main.add_child(victim)
+		await wait_frames(2)
+		victim.take_hit(player, Vector2.RIGHT, "pistol")
+		dying = gore_layer.get_children().filter(func(c): return c.get_script() == dying_script)
+		most_drops = 0
+		for i in 60:
+			await process_frame
+			most_drops = maxi(most_drops, dying[0]._drops.size())
+		var label: String = game.BloodLevel.keys()[level]
+		check(most_drops == 0, "%s blood: no spurts" % label)
+		var small_pool: float = dying_script._pool_radius_of(dying_script.POOL_LAST_REDUCED) if dying[0].is_pixel() else dying_script.POOL_REDUCED
+		check(dying[0].pool_radius() <= small_pool and (level != game.BloodLevel.OFF or dying[0].pool_radius() == 0.0), "%s blood: %s" % [label, "a small pool" if level == game.BloodLevel.REDUCED else "no pool"])
+		check(not dying[0].gory, "%s blood: no burst head" % label)
+	game.blood_level = game.BloodLevel.FULL
+
 	print("\n%s (%d failure(s))" % ["ALL PASSED" if failures == 0 else "SOME FAILED", failures])
 	quit(failures)
